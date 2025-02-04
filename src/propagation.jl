@@ -1,19 +1,87 @@
 expand(t::Real, x) = t
 expand(t::AbstractArray, d::Int) = reshape(t, ntuple(Returns(1), d - ndims(t))..., size(t)...)
 
+"""
+    forward!(Xdest::StateLikelihood, Xt::State, process::Process, t)
+    forward(Xt::StateLikelihood, process::Process, t)
+    forward(Xt::State, process::Process, t)
+
+Propagate a state or likelihood forward in time according to the process dynamics.
+
+# Parameters
+- `Xdest`: Destination for in-place operation
+- `Xt`: Initial state or likelihood
+- `process`: The stochastic process
+- `t`: Time to propagate forward
+
+# Returns
+The forward-propagated state or likelihood
+"""
 forward!(Xdest::StateLikelihood, Xt::State, process::Process, t) = forward!(Xdest, stochastic(Xt), process, t)
-backward!(Xdest::StateLikelihood, Xt::State, process::Process, t) = backward!(Xdest, stochastic(Xt), process, t)
 forward(Xt::StateLikelihood, process::Process, t) = forward!(copy(Xt), Xt, process, t)
-backward(Xt::StateLikelihood, process::Process, t) = backward!(copy(Xt), Xt, process, t)
 forward(Xt::State, process::Process, t) = forward!(stochastic(Xt), Xt, process, t)
+
+"""
+    backward!(Xdest::StateLikelihood, Xt::State, process::Process, t)
+    backward(Xt::StateLikelihood, process::Process, t)
+    backward(Xt::State, process::Process, t)
+
+Propagate a state or likelihood backward in time according to the process dynamics.
+
+# Parameters
+- `Xdest`: Destination for in-place operation
+- `Xt`: Final state or likelihood
+- `process`: The stochastic process
+- `t`: Time to propagate backward
+
+# Returns
+The backward-propagated state or likelihood
+"""
+backward!(Xdest::StateLikelihood, Xt::State, process::Process, t) = backward!(Xdest, stochastic(Xt), process, t)
+backward(Xt::StateLikelihood, process::Process, t) = backward!(copy(Xt), Xt, process, t)
 backward(Xt::State, process::Process, t) = backward!(stochastic(Xt), Xt, process, t)
 
+"""
+    interpolate(X0::ContinuousState, X1::ContinuousState, tF, tB)
+
+Linearly interpolate between two continuous states.
+
+# Parameters
+- `X0`: Initial state
+- `X1`: Final state
+- `tF`: Forward time
+- `tB`: Backward time
+
+# Returns
+The interpolated state
+"""
 function interpolate(X0::ContinuousState, X1::ContinuousState, tF, tB)
     t0 = @. tF/(tF + tB)
     t1 = @. 1 - t0
     return ContinuousState(X0.state .* expand(t1, ndims(X0.state)) .+ X1.state .* expand(t0, ndims(X1.state)))
 end
 
+"""
+    endpoint_conditioned_sample(X0, X1, p, tF, tB)
+    endpoint_conditioned_sample(X0, X1, p, t)
+    endpoint_conditioned_sample(X0, X1, p::Deterministic, tF, tB)
+
+Generate a sample from the endpoint-conditioned process.
+
+# Parameters
+- `X0`: Initial state
+- `X1`: Final state
+- `p`: The stochastic process
+- `t`, `tF`: Forward time
+- `tB`: Backward time (defaults to 1-t for single time parameter)
+
+# Returns
+A sample from the endpoint-conditioned distribution
+
+# Notes
+For continuous processes, uses the forward-backward algorithm.
+For deterministic processes, uses linear interpolation.
+"""
 endpoint_conditioned_sample(X0, X1, p, tF, tB) = rand(forward(X0, p, tF) ⊙ backward(X1, p, tB))
 endpoint_conditioned_sample(X0, X1, p, t) = endpoint_conditioned_sample(X0, X1, p, t, clamp.(1 .- t, 0, 1))
 endpoint_conditioned_sample(X0, X1, p::Deterministic, tF, tB) = interpolate(X0, X1, tF, tB)

@@ -5,7 +5,7 @@ module ForwardBackward
     include("maths.jl")
     include("processes.jl")
     include("states.jl")
-    include("propogation.jl")
+    include("propagation.jl")
     include("manifolds.jl")
 
     export
