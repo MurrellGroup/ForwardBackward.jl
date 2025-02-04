@@ -4,7 +4,7 @@ CurrentModule = ForwardBackward
 
 # ForwardBackward.jl
 
-ForwardBackward.jl is a Julia package for endpoint-conditioned sampling and interpolation of stochastic processes. It provides a framework for generating paths between two states that respect the underlying dynamics of various processes.
+ForwardBackward.jl is a Julia package for evolving discrete and continuous states under a variety of processes.
 
 ## Overview
 
