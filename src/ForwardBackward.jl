@@ -34,6 +34,8 @@ module ForwardBackward
         backward!,
         tensor,
         sumnorm,
-        stochastic
+        stochastic,
+        perturb!,
+        perturb
     
 end

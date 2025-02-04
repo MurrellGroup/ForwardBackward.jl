@@ -57,17 +57,33 @@ interpolate(X0::ManifoldState, Xt::ManifoldState, tF, tB) = interpolate!(similar
 
 """
     perturb!(M::AbstractManifold, q, p, v)
+    perturb(M::AbstractManifold, p, v)
 
 Perturb a point `p` on manifold `M` by sampling from a normal distribution in the tangent space
 with variance `v` and exponentiating back to the manifold.
 
 # Parameters
 - `M`: The manifold
-- `q`: Destination for perturbed point
+- `q`: The point that is overwritten (for perturb!)
 - `p`: Original point
 - `v`: Variance of perturbation
 """
 perturb!(M::AbstractManifold, q, p, v) = exp!(M, q, p, get_vector(M, p, rand(MvNormal(manifold_dimension(M), sqrt(v)))))
+
+"""
+    perturb!(M::AbstractManifold, q, p, v)
+    perturb(M::AbstractManifold, p, v)
+
+Perturb a point `p` on manifold `M` by sampling from a normal distribution in the tangent space
+with variance `v` and exponentiating back to the manifold.
+
+# Parameters
+- `M`: The manifold
+- `q`: The point that is overwritten (for perturb!)
+- `p`: Original point
+- `v`: Variance of perturbation
+"""
+perturb(M::AbstractManifold, p, v) = perturb!(M, similar(p), p, v)
 
 #A bit uncertain about this for manifolds. Might need to apply the drift correction in the tangent space.
 """
@@ -133,7 +149,7 @@ end
 
 #=
 #These work, but we might not need them. Need to think about it.
-perturb(M::AbstractManifold, p, v) = perturb!(M, similar(p), p, v)
+
 function perturb!(D::ManifoldState, S::ManifoldState, v)
     perturb!.((S.M,), D.state, S.state, expand(v, ndims(S.state)))
     return D
