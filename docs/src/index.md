@@ -68,9 +68,7 @@ t = 0.3
 sample = endpoint_conditioned_sample(X0, X1, process, t)
 ```
 
-## Mathematical Background
-
-The endpoint-conditioned sampling works by exploiting the fact that:
+For states with likelihoods, the endpoint-conditioned sampling first explicitly constructs a distribution over Xt via:
 
 P(Xt | X0, X1) ∝ P(Xt | X0) × P(X1 | Xt)
 
