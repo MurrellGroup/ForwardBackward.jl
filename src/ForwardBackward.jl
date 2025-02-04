@@ -1,6 +1,6 @@
 module ForwardBackward
 
-    using Distributions, LinearAlgebra, Manifolds, ArraysOfArrays
+    using Distributions, LinearAlgebra, ArraysOfArrays
 
     include("maths.jl")
     include("processes.jl")
@@ -17,13 +17,11 @@ module ForwardBackward
         UniformUnmasking,
         GeneralDiscrete,
         PiQ,
-        ManifoldProcess,
         #Likelihoods & States
         CategoricalLikelihood,
         GaussianLikelihood,
         DiscreteState,
         ContinuousState,
-        ManifoldState,
         #Functions
         endpoint_conditioned_sample,
         interpolate,
@@ -35,6 +33,9 @@ module ForwardBackward
         tensor,
         sumnorm,
         stochastic,
+        #Manifolds
+        ManifoldProcess,
+        ManifoldState,
         perturb!,
         perturb
     

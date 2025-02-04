@@ -1,151 +1,21 @@
-"""
-    ManifoldProcess(v::T)
-    ManifoldProcess()
 
-A stochastic process on a Riemannian manifold with drift variance `v`.
-
-# Parameters
-- `v`: Drift variance parameter (default: 0)
-"""
 struct ManifoldProcess{T} <: Process
     v::T
 end
 
-ManifoldProcess() = ManifoldProcess(0)
-
-"""
-    ManifoldState{Q<:AbstractManifold,A<:AbstractArray}(state::A, M::Q)
-    ManifoldState(M::AbstractManifold, state::AbstractArray{<:AbstractArray})
-
-Represents a state on a Riemannian manifold.
-
-# Parameters
-- `state`: Array of points on the manifold
-- `M`: The manifold object
-"""
-struct ManifoldState{Q<:AbstractManifold,A<:AbstractArray} <: State
+struct ManifoldState{Q,A<:AbstractArray} <: State
     state::A
     M::Q
 end
 
-ManifoldState(M::AbstractManifold, state::AbstractArray{<:AbstractArray}) = ManifoldState(ArrayOfSimilarArrays(state), M)
-
-Base.similar(S::ManifoldState) = ManifoldState(S.M, similar(S.state))
-Base.copy(S::ManifoldState) = ManifoldState(S.M, copy(S.state))
-
-"""
-    interpolate!(dest::ManifoldState, X0::ManifoldState, Xt::ManifoldState, tF, tB)
-    interpolate(X0::ManifoldState, Xt::ManifoldState, tF, tB)
-
-Interpolate between two states on a manifold using geodesics.
-
-# Parameters
-- `dest`: Destination state for in-place operation
-- `X0`: Initial state
-- `Xt`: Final state
-- `tF`: Time difference from initial state
-- `tB`: Time difference to final state
-
-# Returns
-The interpolated state
-"""
-function interpolate!(dest::ManifoldState, X0::ManifoldState, Xt::ManifoldState, tF, tB)
-    shortest_geodesic!.((X0.M,), dest.state, X0.state, Xt.state, expand(tF ./ (tF .+ tB), ndims(X0.state)))
-    return dest
-end
-interpolate(X0::ManifoldState, Xt::ManifoldState, tF, tB) = interpolate!(similar(X0), X0, Xt, tF, tB)
-
-"""
-    perturb!(M::AbstractManifold, q, p, v)
-    perturb(M::AbstractManifold, p, v)
-
-Perturb a point `p` on manifold `M` by sampling from a normal distribution in the tangent space
-with variance `v` and exponentiating back to the manifold.
-
-# Parameters
-- `M`: The manifold
-- `q`: The point that is overwritten (for perturb!)
-- `p`: Original point
-- `v`: Variance of perturbation
-"""
-perturb!(M::AbstractManifold, q, p, v) = exp!(M, q, p, get_vector(M, p, rand(MvNormal(manifold_dimension(M), sqrt(v)))))
-
-"""
-    perturb!(M::AbstractManifold, q, p, v)
-    perturb(M::AbstractManifold, p, v)
-
-Perturb a point `p` on manifold `M` by sampling from a normal distribution in the tangent space
-with variance `v` and exponentiating back to the manifold.
-
-# Parameters
-- `M`: The manifold
-- `q`: The point that is overwritten (for perturb!)
-- `p`: Original point
-- `v`: Variance of perturbation
-"""
-perturb(M::AbstractManifold, p, v) = perturb!(M, similar(p), p, v)
-
-#A bit uncertain about this for manifolds. Might need to apply the drift correction in the tangent space.
-"""
-    step_toward!(M::AbstractManifold, dest, p, q, var, delta_t, remaining_t)
-    step_toward(M::AbstractManifold, p, q, var, delta_t, remaining_t)
-
-Take a single diffusion step from point `p` toward point `q` on manifold `M`. If `var` is 0, this is a deterministic step along the geodesic.
-
-# Parameters
-- `M`: The manifold
-- `dest`: Destination for the new point
-- `p`: Starting point
-- `q`: Target point
-- `var`: Variance of stochastic perturbation
-- `delta_t`: Time step size
-- `remaining_t`: Total remaining time
-
-# Returns
-The new point after stepping
-"""
-function step_toward!(M::AbstractManifold, dest, p, q, var, delta_t, remaining_t)
-    new_p = (var > 0) ? perturb!(M, dest, p, delta_t * var) : p
-    shortest_geodesic!(M, dest, new_p, q, delta_t / remaining_t)
-    return dest
-end
-step_toward(M::AbstractManifold, p, q, var, delta_t, remaining_t) = step_toward!(M, similar(p), p, q, var, delta_t, remaining_t)
-
-"""
-    endpoint_conditioned_sample(X0::ManifoldState, X1::ManifoldState, p::ManifoldProcess, tF, tB; Δt = 0.05)
-
-Generate a sample from the endpoint-conditioned process on a manifold.
-
-# Parameters
-- `X0`: Initial state
-- `X1`: Final state
-- `p`: The manifold process
-- `tF`: Forward time
-- `tB`: Backward time
-- `Δt`: Discretized step size (default: 0.05)
-
-# Returns
-A sample state at the specified time
-
-# Notes
-Uses a numerical stepping procedure to approximate the endpoint-conditioned distribution.
-"""
-function endpoint_conditioned_sample(X0::ManifoldState, X1::ManifoldState, p::ManifoldProcess, tF, tB; Δt = 0.05)
-    T = eltype(flatview(X0.state))
-    tot = zeros(T, size(X0.state)) .+ expand(tF .+ tB, ndims(X0.state))
-    target = zeros(T, size(X0.state)) .+ expand(tF, ndims(X0.state))
-    Xt = copy(X0)
-    for ind in CartesianIndices(X0.state)
-        t = 0.0
-        while t < target[ind]
-            inc = min(T(Δt), target[ind] - t)
-            step_toward!(X0.M, Xt.state[ind], Xt.state[ind], X1.state[ind], p.v, inc, tot[ind] - t)
-            t += inc
-        end
-    end
-    return Xt
-end
-
+""" Load `using Manifolds` to use ManifoldProcess """
+function ManifoldProcess end
+""" Load `using Manifolds` to use ManifoldState """
+function ManifoldState end
+""" Load `using Manifolds` to use perturb! """
+function perturb! end
+""" Load `using Manifolds` to use perturb """
+function perturb end
 
 #=
 #These work, but we might not need them. Need to think about it.
