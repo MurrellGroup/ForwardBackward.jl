@@ -31,6 +31,13 @@ end
 
 UniformDiscrete() = UniformDiscrete(1.0)
 
+#Subs/t at equilibrium is zero, so we scale this such that, when everything is masked, μ=1 => subs/t=1
+struct UniformUnmasking{T} <: DiscreteProcess
+    μ::T
+end
+
+UniformUnmasking() = UniformUnmasking(1.0)
+
 struct GeneralDiscrete{T} <: DiscreteProcess
     Q::Matrix{T}
 end

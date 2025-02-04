@@ -48,6 +48,19 @@ using Test
             @test isapprox(XtF1.dist, XtF2.dist)
             @test isapprox(XtF1.dist, XtF3.dist)
         end
+
+        S = 4
+        Q = zeros(S,S)
+        Q[end,:] .= 1/(S-1)
+        Q[end,end] = -1
+        p1 = UniformUnmasking()
+        p2 = GeneralDiscrete(Q)
+        X0 = CategoricalLikelihood(rand(S,100))
+        for f in [forward, backward]
+            XtF1 = f(X0, p1, 0.234)
+            XtF2 = f(X0, p2, 0.234)
+            @test isapprox(XtF1.dist, XtF2.dist)
+        end
     end
 
     @testset "Some continuous equivalences" begin

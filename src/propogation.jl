@@ -100,17 +100,43 @@ function backward!(dest::CategoricalLikelihood, source::CategoricalLikelihood, p
     return dest
 end
 
+function forward!(dest::CategoricalLikelihood, source::CategoricalLikelihood, process::UniformUnmasking, elapsed_time)
+    t = expand(elapsed_time, ndims(source.dist))
+    K = size(source.dist, 1)
+    mask_volume = selectdim(source.dist, 1, K:K)
+    event_p = @. 1 - exp(-process.μ * t)
+    #Distribute lost mask volume among all other states equally, and decay it from the mask:
+    selectdim(dest.dist, 1, 1:(K-1)) .= selectdim(source.dist, 1, 1:(K-1)) .+ mask_volume .* (1/(K-1)) .* event_p
+    selectdim(dest.dist, 1, K:K) .= mask_volume .* (1 .- event_p)
+    dest.log_norm_const .= source.log_norm_const
+    return dest
+end
+
+function backward!(dest::CategoricalLikelihood, source::CategoricalLikelihood,
+    process::UniformUnmasking, elapsed_time)
+    t = expand(elapsed_time, ndims(source.dist))
+    K = size(source.dist, 1)
+    event_p = @. 1 - exp(-process.μ * t)
+    #Nonmask states pass through unchanged.
+    selectdim(dest.dist, 1, 1:(K-1)) .= selectdim(source.dist, 1, 1:(K-1))
+    #Mask state's message gathers contributions from nonmask states.
+    vsum = sum(selectdim(source.dist, 1, 1:(K-1)) .* (event_p/(K-1)), dims=1)
+    selectdim(dest.dist, 1, K:K) .= (1 .- event_p) .* selectdim(source.dist, 1, K:K) .+ vsum
+    dest.log_norm_const .= source.log_norm_const
+    return dest
+end
+
 #Doesn't handle batching. Ok for now, because unlikely to be used for diffusions.
-function backward!(dest::CategoricalLikelihood, source::CategoricalLikelihood, process::GeneralDiscrete, t::Real)
+function forward!(dest::CategoricalLikelihood, source::CategoricalLikelihood, process::GeneralDiscrete, t::Real)
     P = exp(process.Q .* t)
     dest.dist .= (source.dist' * P)'
     dest.log_norm_const .= source.log_norm_const
     return dest
 end
 
-function forward!(dest::CategoricalLikelihood, source::CategoricalLikelihood, process::GeneralDiscrete, t::Real)
+function backward!(dest::CategoricalLikelihood, source::CategoricalLikelihood, process::GeneralDiscrete, t::Real)
     P = exp(process.Q .* t)
-    dest.dist .= (source.dist' * P)'
+    mul!(dest.dist, P, source.dist)
     dest.log_norm_const .= source.log_norm_const
     return dest
 end

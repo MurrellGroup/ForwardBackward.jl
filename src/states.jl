@@ -14,6 +14,7 @@ struct CategoricalLikelihood{T} <: DiscreteStateLikelihood where T <: Real
 end
 
 CategoricalLikelihood(K::Int, dims...; T = Float64) = CategoricalLikelihood(zeros(T, K, dims...), zeros(T, dims...))
+CategoricalLikelihood(dist::AbstractArray{T}) where T <: Real = CategoricalLikelihood(dist, zeros(T, size(dist)[2:end]))
 
 struct ContinuousState{T} <: State where T <: Real
     state::AbstractArray{T}

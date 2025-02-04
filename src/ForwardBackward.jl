@@ -14,6 +14,7 @@ module ForwardBackward
         BrownianMotion,
         OrnsteinUhlenbeck,
         UniformDiscrete,
+        UniformUnmasking,
         GeneralDiscrete,
         PiQ,
         ManifoldProcess,
@@ -24,7 +25,6 @@ module ForwardBackward
         ContinuousState,
         ManifoldState,
         #Functions
-        sumnorm,
         endpoint_conditioned_sample,
         interpolate,
         ⊙,
@@ -32,6 +32,8 @@ module ForwardBackward
         backward,
         forward!,
         backward!,
-        tensor
+        tensor,
+        sumnorm,
+        stochastic
     
 end
