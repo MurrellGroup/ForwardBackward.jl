@@ -100,6 +100,8 @@ sample = endpoint_conditioned_sample(X0, X1, process, 0.5)
 ### Endpoint-conditioned samples on a torus
 
 ```julia
+using ForwardBackward, Manifolds, Plots
+
 #Project Torus(2) into 3D (just for plotting)
 function tor(p; R::Real=2, r::Real=0.5)
     u,v = p[1], p[2]
@@ -109,16 +111,16 @@ function tor(p; R::Real=2, r::Real=0.5)
     return [x, y, z]
 end
 
+#Define the manifold, and two endpoints, which are on opposite sides (in both dims) of the torus:
+M = Torus(2)
+p1 = [-pi, 0.0]
+p0 = [0.0, -pi]
+
 #When non-zero, the process will diffuse. When 0, the process is deterministic:
 for P in [ManifoldProcess(0), ManifoldProcess(0.05)]
     #When non-zero, the endpoints will be slightly noised:
     for perturb_var in [0.0, 0.0001] 
      
-        #Define the manifold, and two endpoints, which are on opposite sides (in both dims) of the torus:
-        M = ForwardBackward.Torus(2)
-        p1 = [-pi, 0.0]
-        p0 = [0.0, -pi]
-
         #We'll generate endpoint-conditioned samples evenly spaced over time:
         t_vec = 0:0.001:1
 
@@ -129,7 +131,7 @@ for P in [ManifoldProcess(0), ManifoldProcess(0.05)]
         #Independently draw endpoint-conditioned samples at times t_vec:
         Xt = endpoint_conditioned_sample(X0, X1, P, t_vec)
 
-        #Plot the torus, and the endpoint conditioned samples upon it:
+        #Plot the torus:
         R = 2
         r = 0.5
         u = range(0, 2π; length=100)  # angle around the tube
@@ -146,10 +148,23 @@ for P in [ManifoldProcess(0), ManifoldProcess(0.05)]
     end
 end
 ```
+
+`torus_0.0_0.svg:`
+
 ![Image](https://github.com/user-attachments/assets/21410c12-fd16-4542-b323-5f048e878bb5)
+
+`torus_0.0001_0.svg:`
+
 ![Image](https://github.com/user-attachments/assets/a88d67a1-87f6-44a2-9b70-2315c3eaa983)
+
+`torus_0.0_0.05.svg:`
+
 ![Image](https://github.com/user-attachments/assets/fb3dc348-3fcf-4a3c-b120-521db0a9350d)
+
+`torus_0.0001_0.05.svg:`
+
 ![Image](https://github.com/user-attachments/assets/06e65a05-cc3d-4cfb-95cc-d6c27b0211c7)
+
 
 ## API Reference
 

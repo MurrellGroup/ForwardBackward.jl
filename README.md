@@ -132,7 +132,7 @@ for P in [ManifoldProcess(0), ManifoldProcess(0.05)]
         #Independently draw endpoint-conditioned samples at times t_vec:
         Xt = endpoint_conditioned_sample(X0, X1, P, t_vec)
 
-        #Plot the torus, and the endpoint conditioned samples upon it:
+        #Plot the torus:
         R = 2
         r = 0.5
         u = range(0, 2π; length=100)  # angle around the tube
