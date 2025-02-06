@@ -1,7 +1,7 @@
 """
-    abstract type Process end
+    abstract type Process
 
-Base type for all stochastic processes in the package.
+Base type for all processes defined in the ForwardBackward package.
 """
 abstract type Process end
 
@@ -13,14 +13,14 @@ A deterministic process where endpoint conditioning results in linear interpolat
 struct Deterministic <: Process end
 
 """
-    abstract type DiscreteProcess <: Process end
+    abstract type DiscreteProcess <: Process
 
 Base type for processes with discrete state spaces.
 """
 abstract type DiscreteProcess <: Process end
 
 """
-    abstract type ContinuousProcess <: Process end
+    abstract type ContinuousProcess <: Process
 
 Base type for processes with continuous state spaces.
 """

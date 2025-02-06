@@ -9,6 +9,9 @@ module ForwardBackward
     include("manifolds.jl")
 
     export
+        #Abstract Types
+        Process,
+        State,
         #Processes
         Deterministic,    
         BrownianMotion,
@@ -37,6 +40,7 @@ module ForwardBackward
         ManifoldProcess,
         ManifoldState,
         perturb!,
-        perturb
+        perturb,
+        expand
     
 end

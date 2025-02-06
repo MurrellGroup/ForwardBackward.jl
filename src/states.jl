@@ -151,3 +151,4 @@ The underlying array representation of the state or likelihood.
 tensor(d::State) = flatview(d.state)
 tensor(d::CategoricalLikelihood) = d.dist
 tensor(d::GaussianLikelihood) = d.mu
+tensor(d::AbstractArray) = flatview(d)
