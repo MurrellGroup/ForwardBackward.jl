@@ -14,9 +14,9 @@ abstract type StateLikelihood end
 abstract type DiscreteStateLikelihood <: StateLikelihood end
 abstract type ContinuousStateLikelihood <: StateLikelihood end
 
-struct DiscreteState{T} <: State where T <: Integer
+struct DiscreteState{A} <: State
     K::Int
-    state::AbstractArray{T}
+    state::A
 end
 
 """
