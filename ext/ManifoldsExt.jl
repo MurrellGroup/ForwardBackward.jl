@@ -143,6 +143,44 @@ function endpoint_conditioned_sample(X0::ManifoldState, X1::ManifoldState, p::Ma
     return Xt
 end
 
+##########################
+#Manifold-specific helpers
+##########################
+
+##########################
+#ProbabilitySimplex
+##########################
+
+"""
+    soften!(x::AbstractArray{T}, a = T(1e-5)) where T
+
+In-place regularizes values of `x` slightly while preserving its sum along the first dimension.
+```
+(x .+ a) ./ sum(x .+ a, dims = 1)
+```
+"""
+function soften!(x::AbstractArray{T}, a = T(1e-5)) where T
+    x .= x .+ a
+    x .= x ./ sum(x, dims = 1)
+end
+
+#By default, this moves the points slightly away from the corners of the simplex, for... reasons.
+"""
+    ManifoldState(M::ProbabilitySimplex, x::AbstractArray{<:Integer}; softner! = soften!)
+
+Convert a discrete array to points on a probability simplex. `maximum(x)` must be `<= manifold_dimension(M)+1`.
+By default this moves the points slightly away from the corners of the simplex (see `soften!`).
+
+"""
+function ManifoldState(M::ProbabilitySimplex{Manifolds.ManifoldsBase.TypeParameter{Tuple{K}}, :open}, x::AbstractArray{<:Integer}; softner! = soften!) where K
+    s = ManifoldState(M, eachslice(stochastic(DiscreteState(K+1, x)).dist, dims = Tuple(1 .+ collect(1:ndims(x)))))
+    if !isnothing(softner!)
+        softner!(tensor(s))
+    end
+    return s
+end
+
+
 
 #=
 #These work, but we might not need them. Need to think about it.

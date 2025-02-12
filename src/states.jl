@@ -93,9 +93,9 @@ A new likelihood distribution of the same type as the inputs.
 function ⊙(a::CategoricalLikelihood, b::CategoricalLikelihood; norm = true)
     r = CategoricalLikelihood(a.dist .* b.dist, a.log_norm_const .+ b.log_norm_const)
     if norm
-        scale = dropdims(sum(r.dist, dims = 1), dims=1)
+        scale = sum(r.dist, dims = 1)
         r.dist ./= scale
-        r.log_norm_const .+= log.(scale)
+        r.log_norm_const .+= dropdims(log.(scale), dims=1)
     end
     return r
 end
@@ -124,6 +124,7 @@ A zero-variance (ie. delta function) Gaussian for the continuous case, and a one
 A likelihood distribution corresponding to the input state.
 """
 stochastic(T::Type, o::ContinuousState) = GaussianLikelihood(T.(o.state), T.(o.state .* 0), T.(o.state .* 0))
+stochastic(o::ContinuousState{T}) where T = stochastic(T, o)
 
 function stochastic(T::Type, o::DiscreteState)
     s = CategoricalLikelihood(zeros(T, o.K, size(o.state)...),zeros(T, size(o.state)...))
@@ -152,3 +153,4 @@ tensor(d::State) = flatview(d.state)
 tensor(d::CategoricalLikelihood) = d.dist
 tensor(d::GaussianLikelihood) = d.mu
 tensor(d::AbstractArray) = flatview(d)
+tensor(d::Real) = d

@@ -27,14 +27,18 @@ Base type for processes with continuous state spaces.
 abstract type ContinuousProcess <: Process end
 
 """
-    BrownianMotion(δ::Real, v::Real)
+    BrownianMotion(δ::T, v::T) where T <: Real
+    BrownianMotion(v::Real)
     BrownianMotion()
 
 Brownian motion process with drift `δ` and variance `v`.
 
 # Parameters
-- `δ`: Drift parameter (default: 0.0)
-- `v`: Variance parameter (default: 1.0)
+- `δ`: Drift parameter (default: 0)
+- `v`: Variance parameter (default: 1)
+
+# Tip
+The rate parameters must match the type of the state (eg. Float32 both both process and state), but you can avoid this if you use integer process parameters.
 
 # Examples
 ```julia
@@ -50,18 +54,23 @@ struct BrownianMotion{T} <: ContinuousProcess where T <: Real
     v::T
 end
 
-BrownianMotion() = BrownianMotion(0.0, 1.0)
+BrownianMotion() = BrownianMotion(0, 1)
+BrownianMotion(v::T) where T = BrownianMotion(T(0), v)
+
 
 """
-    OrnsteinUhlenbeck(μ::Real, v::Real, θ::Real)
+    OrnsteinUhlenbeck(μ::T, v::T, θ::T) where T <: Real
     OrnsteinUhlenbeck()
 
 Ornstein-Uhlenbeck process with mean `μ`, variance `v`, and mean reversion rate `θ`.
 
 # Parameters
-- `μ`: Long-term mean (default: 0.0)
-- `v`: Variance parameter (default: 1.0)
-- `θ`: Mean reversion rate (default: 1.0)
+- `μ`: Long-term mean (default: 0)
+- `v`: Variance parameter (default: 1)
+- `θ`: Mean reversion rate (default: 1)
+
+# Tip
+The rate parameters must match the type of the state (eg. Float32 both both process and state), but you can avoid this if you use integer process parameters.
 
 # Examples
 ```julia
@@ -78,7 +87,7 @@ struct OrnsteinUhlenbeck{T} <: ContinuousProcess
     θ::T
 end
 
-OrnsteinUhlenbeck() = OrnsteinUhlenbeck(0.0, 1.0, 1.0)
+OrnsteinUhlenbeck() = OrnsteinUhlenbeck(0, 1, 1)
 
 """
     UniformDiscrete(μ::Real)
@@ -87,13 +96,16 @@ OrnsteinUhlenbeck() = OrnsteinUhlenbeck(0.0, 1.0, 1.0)
 Discrete process with uniform transition rates between states, scaled by `μ`.
 
 # Parameters
-- `μ`: Rate scaling parameter (default: 1.0)
+- `μ`: Rate scaling parameter (default: 1)
+
+# Tip
+The rate parameters must match the type of the state (eg. Float32 both both process and state), but you can avoid this if you use integer process parameters.
 """
 struct UniformDiscrete{T} <: DiscreteProcess
     μ::T
 end
 
-UniformDiscrete() = UniformDiscrete(1.0)
+UniformDiscrete() = UniformDiscrete(1)
 
 #Subs/t at equilibrium is zero, so we scale this such that, when everything is masked, μ=1 => subs/t=1
 """
@@ -104,13 +116,16 @@ Mutates only a mask (the last state index) to any other state (with equal rates)
 `μ=1` corresponds to one substitution per unit time.
 
 # Parameters
-- `μ`: Rate parameter (default: 1.0)
+- `μ`: Rate parameter (default: 1)
+
+# Tip
+The rate parameters must match the type of the state (eg. Float32 both both process and state), but you can avoid this if you use integer process parameters.
 """
 struct UniformUnmasking{T} <: DiscreteProcess
     μ::T
 end
 
-UniformUnmasking() = UniformUnmasking(1.0)
+UniformUnmasking() = UniformUnmasking(1)
 
 """
     GeneralDiscrete(Q::Matrix)
@@ -120,8 +135,8 @@ Discrete process with arbitrary transition rate matrix `Q`.
 # Parameters
 - `Q`: Transition rate matrix
 """
-struct GeneralDiscrete{T} <: DiscreteProcess
-    Q::Matrix{T}
+struct GeneralDiscrete{A<:AbstractMatrix{<:Real}} <: DiscreteProcess
+    Q::A
 end
 
 """

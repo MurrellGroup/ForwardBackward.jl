@@ -19,10 +19,10 @@ function pointwise_gaussians_product(g1_mu::T, g1_var::T, g2_mu::T, g2_var::T) w
     r_var = 1 / (1 / g1_var + 1 / g2_var)
     r_mu = r_var * (g1_mu / g1_var + g2_mu / g2_var)
     r_log_norm_const =
-        -0.5 * (
+        T(-0.5 * (
             log(2 * pi * (g1_var * g2_var / r_var)) +
             (g1_mu^2 / g1_var) +
             (g2_mu^2 / g2_var) - (r_mu^2 / r_var)
-        )
+        ))
     return r_mu, r_var, r_log_norm_const
 end
