@@ -52,6 +52,14 @@ function interpolate!(dest::ManifoldState, X0::ManifoldState, Xt::ManifoldState,
 end
 interpolate(X0::ManifoldState, Xt::ManifoldState, tF, tB) = interpolate!(similar(X0), X0, Xt, tF, tB)
 
+
+"""
+    MultiNormal(d::Int, v::Real)
+
+A multivariate normal distribution with a diagonal covariance matrix with variance `v`.
+"""
+MultiNormal(d::Int, v::Real) = MvNormal(ForwardBackward.LinearAlgebra.Diagonal(Distributions.FillArrays.Fill(v, d)))
+
 """
     perturb!(M::AbstractManifold, q, p, v)
     perturb(M::AbstractManifold, p, v)
@@ -65,7 +73,7 @@ with variance `v` and exponentiating back to the manifold.
 - `p`: Original point
 - `v`: Variance of perturbation
 """
-perturb!(M::AbstractManifold, q, p, v) = exp!(M, q, p, get_vector(M, p, rand(MvNormal(manifold_dimension(M), sqrt(v)))))
+perturb!(M::AbstractManifold, q, p, v) = exp!(M, q, p, get_vector(M, p, rand(MultiNormal(manifold_dimension(M), v))))
 
 """
     perturb!(M::AbstractManifold, q, p, v)
@@ -172,13 +180,14 @@ Convert a discrete array to points on a probability simplex. `maximum(x)` must b
 By default this moves the points slightly away from the corners of the simplex (see `soften!`).
 
 """
-function ManifoldState(M::ProbabilitySimplex{Manifolds.ManifoldsBase.TypeParameter{Tuple{K}}, :open}, x::AbstractArray{<:Integer}; softner! = soften!) where K
-    s = ManifoldState(M, eachslice(stochastic(DiscreteState(K+1, x)).dist, dims = Tuple(1 .+ collect(1:ndims(x)))))
+function ManifoldState(T::Type, M::ProbabilitySimplex{Manifolds.ManifoldsBase.TypeParameter{Tuple{K}}, :open}, x::AbstractArray{<:Integer}; softner! = soften!) where K
+    s = ManifoldState(M, eachslice(stochastic(T, DiscreteState(K+1, x)).dist, dims = Tuple(1 .+ collect(1:ndims(x)))))
     if !isnothing(softner!)
         softner!(tensor(s))
     end
     return s
 end
+ManifoldState(M::ProbabilitySimplex, x::AbstractArray{<:Integer}; softner! = soften!) = ManifoldState(Float64, M, x; softner! = softner!)
 
 
 

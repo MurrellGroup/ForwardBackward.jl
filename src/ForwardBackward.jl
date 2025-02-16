@@ -11,7 +11,9 @@ module ForwardBackward
     export
         #Abstract Types
         Process,
+        DiscreteProcess,
         State,
+        StateLikelihood,
         #Processes
         Deterministic,    
         BrownianMotion,

@@ -1,5 +1,9 @@
 expand(t::Real, x) = t
-expand(t::AbstractArray, d::Int) = reshape(t, ntuple(Returns(1), d - ndims(t))..., size(t)...)
+function expand(t::AbstractArray, d::Int)
+    ndt = ndims(t)
+    d - ndt < 0 && error("Cannot expand array of size $(size(t)) to $d dimensions.")
+    reshape(t, ntuple(Returns(1), d - ndt)..., size(t)...)
+end
 
 """
     forward!(Xdest::StateLikelihood, Xt::State, process::Process, t)
@@ -17,9 +21,9 @@ Propagate a state or likelihood forward in time according to the process dynamic
 # Returns
 The forward-propagated state or likelihood
 """
-forward!(Xdest::StateLikelihood, Xt::State, process::Process, t) = forward!(Xdest, stochastic(Xt), process, t)
+forward!(Xdest::StateLikelihood, Xt::State, process::Process, t) = forward!(Xdest, stochastic(eltype(t), Xt), process, t)
 forward(Xt::StateLikelihood, process::Process, t) = forward!(copy(Xt), Xt, process, t)
-forward(Xt::State, process::Process, t) = forward!(stochastic(Xt), Xt, process, t)
+forward(Xt::State, process::Process, t) = forward!(stochastic(eltype(t), Xt), Xt, process, t)
 
 """
     backward!(Xdest::StateLikelihood, Xt::State, process::Process, t)
@@ -37,9 +41,9 @@ Propagate a state or likelihood backward in time according to the process dynami
 # Returns
 The backward-propagated state or likelihood
 """
-backward!(Xdest::StateLikelihood, Xt::State, process::Process, t) = backward!(Xdest, stochastic(Xt), process, t)
+backward!(Xdest::StateLikelihood, Xt::State, process::Process, t) = backward!(Xdest, stochastic(eltype(t), Xt), process, t)
 backward(Xt::StateLikelihood, process::Process, t) = backward!(copy(Xt), Xt, process, t)
-backward(Xt::State, process::Process, t) = backward!(stochastic(Xt), Xt, process, t)
+backward(Xt::State, process::Process, t) = backward!(stochastic(eltype(t), Xt), Xt, process, t)
 
 """
     interpolate(X0::ContinuousState, X1::ContinuousState, tF, tB)
@@ -180,8 +184,7 @@ function forward!(dest::CategoricalLikelihood, source::CategoricalLikelihood, pr
     return dest
 end
 
-function backward!(dest::CategoricalLikelihood, source::CategoricalLikelihood,
-    process::UniformUnmasking, elapsed_time)
+function backward!(dest::CategoricalLikelihood, source::CategoricalLikelihood, process::UniformUnmasking, elapsed_time)
     t = expand(elapsed_time, ndims(source.dist))
     K = size(source.dist, 1)
     event_p = @. 1 - exp(-process.μ * t)
@@ -194,17 +197,18 @@ function backward!(dest::CategoricalLikelihood, source::CategoricalLikelihood,
     return dest
 end
 
-#Doesn't handle batching. Ok for now, because unlikely to be used for diffusions.
 function forward!(dest::CategoricalLikelihood, source::CategoricalLikelihood, process::GeneralDiscrete, t::Real)
     P = exp(process.Q .* t)
-    dest.dist .= (source.dist' * P)'
+    clamp!(P, 0, 1)
+    reshape(dest.dist, size(source.dist,1), :) .= (reshape(source.dist, size(source.dist,1), :)' * P)'
     dest.log_norm_const .= source.log_norm_const
     return dest
 end
 
 function backward!(dest::CategoricalLikelihood, source::CategoricalLikelihood, process::GeneralDiscrete, t::Real)
     P = exp(process.Q .* t)
-    mul!(dest.dist, P, source.dist)
+    clamp!(P, 0, 1)
+    mul!(reshape(dest.dist, size(source.dist,1), :), P, reshape(source.dist, size(source.dist,1), :))
     dest.log_norm_const .= source.log_norm_const
     return dest
 end
