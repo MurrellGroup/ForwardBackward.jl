@@ -33,13 +33,13 @@ Probability distribution over discrete states.
 - `dims`: Additional dimensions for initialization
 - `T`: Numeric type (default: Float64)
 """
-struct CategoricalLikelihood{T} <: DiscreteStateLikelihood where T <: Real
+struct CategoricalLikelihood{T<:Real} <: DiscreteStateLikelihood
     dist::AbstractArray{T}
     log_norm_const::AbstractArray{T}
 end
 
 CategoricalLikelihood(K::Int, dims...; T = Float64) = CategoricalLikelihood(zeros(T, K, dims...), zeros(T, dims...))
-CategoricalLikelihood(dist::AbstractArray{T}) where T <: Real = CategoricalLikelihood(dist, zeros(T, size(dist)[2:end]))
+CategoricalLikelihood(dist::AbstractArray{T}) where T<:Real = CategoricalLikelihood(dist, zeros(T, size(dist)[2:end]))
 
 """
     ContinuousState(state::AbstractArray{<:Real})
@@ -55,7 +55,7 @@ Representation of continuous states.
 state = ContinuousState(randn(100))
 ```
 """
-struct ContinuousState{T} <: State where T <: Real
+struct ContinuousState{T<:Real} <: State
     state::AbstractArray{T}
 end
 
@@ -69,7 +69,7 @@ Gaussian probability distribution over continuous states.
 - `var`: Variances
 - `log_norm_const`: Log normalization constants
 """
-struct GaussianLikelihood{T} <: ContinuousStateLikelihood where T <: Real
+struct GaussianLikelihood{T<:Real} <: ContinuousStateLikelihood
     mu::AbstractArray{T}
     var::AbstractArray{T}
     log_norm_const::AbstractArray{T}
@@ -105,9 +105,8 @@ function ⊙(a::GaussianLikelihood, b::GaussianLikelihood)
     return GaussianLikelihood(first.(res), (x -> x[2]).(res), last.(res) .+ a.log_norm_const .+ b.log_norm_const)
 end
 
-import Base.rand
-rand(d::GaussianLikelihood) = ContinuousState(rand.(Normal.(d.mu, sqrt.(d.var))))
-rand(d::CategoricalLikelihood) = DiscreteState(size(d.dist,1), rand.(Categorical.(sumnorm.(eachslice(d.dist, dims=Tuple(2:ndims(d.dist)))))))
+Base.rand(d::GaussianLikelihood) = ContinuousState(rand.(Normal.(d.mu, sqrt.(d.var))))
+Base.rand(d::CategoricalLikelihood) = DiscreteState(size(d.dist,1), rand.(Categorical.(sumnorm.(eachslice(d.dist, dims=Tuple(2:ndims(d.dist)))))))
 
 """
     stochastic(o::State)
@@ -135,11 +134,10 @@ function stochastic(T::Type, o::DiscreteState)
 end
 stochastic(o::State) = stochastic(Float64, o)
 
-import Base.copy
-copy(d::DiscreteState) = DiscreteState(d.K, copy(d.state))
-copy(d::CategoricalLikelihood) = CategoricalLikelihood(copy(d.dist), copy(d.log_norm_const))
-copy(d::ContinuousState) = ContinuousState(copy(d.state))
-copy(d::GaussianLikelihood) = GaussianLikelihood(copy(d.mu), copy(d.var), copy(d.log_norm_const))
+Base.copy(d::DiscreteState) = DiscreteState(d.K, copy(d.state))
+Base.copy(d::CategoricalLikelihood) = CategoricalLikelihood(copy(d.dist), copy(d.log_norm_const))
+Base.copy(d::ContinuousState) = ContinuousState(copy(d.state))
+Base.copy(d::GaussianLikelihood) = GaussianLikelihood(copy(d.mu), copy(d.var), copy(d.log_norm_const))
 
 """
     tensor(d::Union{State, StateLikelihood})
