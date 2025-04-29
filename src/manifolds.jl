@@ -31,21 +31,23 @@ Represents a state on a Riemannian manifold.
 Convert a discrete array to points on a probability simplex. `maximum(x)` must be `<= manifold_dimension(M)+1`.
 By default this moves the points slightly away from the corners of the simplex (see `soften!`).
 """
-struct ManifoldState{Q,A<:AbstractArray} <: State
+struct ManifoldState{Q<:AbstractManifold,A<:AbstractArray} <: State
     M::Q
     state::A
 end
 
-ManifoldState(state, M::AbstractManifold) = ManifoldState(M, state)
+function ManifoldState(M::AbstractManifold, state::AbstractArray{<:AbstractArray})
+    @invoke ManifoldState(M, ArrayOfSimilarArrays(state)::AbstractArray)
+end
 
 Base.similar(S::ManifoldState) = ManifoldState(S.M, similar(S.state))
 Base.copy(S::ManifoldState) = ManifoldState(S.M, copy(S.state))
 
 Functors.@functor ManifoldState (state,)
 
-function Functors.functor(::Type{<:ManifoldState{<:Any,<:ArrayOfSimilarArrays}}, state)
+function Functors.functor(::Type{<:ManifoldState{<:AbstractManifold,<:ArrayOfSimilarArrays}}, state)
     namedtuple = (; data=flatview(state.state))
-    reconstruct = nt -> ManifoldState(state.M, nestedview(nt.data, length(innersize(state.state))))
+    reconstruct = nt -> @invoke ManifoldState(state.M, nestedview(nt.data, length(innersize(state.state)))::AbstractArray)
     return namedtuple, reconstruct
 end
 
