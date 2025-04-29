@@ -1,13 +1,14 @@
 name = "ForwardBackward"
 uuid = "e879419d-bb0f-4252-adee-d266c51ac92d"
 authors = ["murrellb <murrellb@gmail.com> and contributors"]
-version = "0.1.0"
+version = "0.1.1"
 
 [deps]
 ArraysOfArrays = "65a8f2f4-9b39-5baf-92e2-a9cc46fdf018"
 Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
+Functors = "d9f16b24-f501-4c13-a1f2-28368ffc5196"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
-Manifolds = "1cead3c2-87b3-11e9-0ccd-23c62b72b94e"
+ManifoldsBase = "3362f125-f0bb-47a3-aa74-596ffd7ef2fb"
 
 [weakdeps]
 Manifolds = "1cead3c2-87b3-11e9-0ccd-23c62b72b94e"
@@ -18,8 +19,10 @@ ManifoldsExt = "Manifolds"
 [compat]
 ArraysOfArrays = "0.6.5"
 Distributions = "0.25.117"
+Functors = "0.5.2"
 LinearAlgebra = "1.11.0"
-Manifolds = "0.10.12"
+Manifolds = "0.10.7"
+ManifoldsBase = "1.0.3"
 julia = "1.9"
 
 [extras]
