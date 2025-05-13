@@ -1,7 +1,7 @@
 name = "ForwardBackward"
 uuid = "e879419d-bb0f-4252-adee-d266c51ac92d"
 authors = ["murrellb <murrellb@gmail.com> and contributors"]
-version = "0.1.1"
+version = "0.1.2"
 
 [deps]
 ArraysOfArrays = "65a8f2f4-9b39-5baf-92e2-a9cc46fdf018"
