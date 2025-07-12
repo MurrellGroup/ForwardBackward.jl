@@ -91,8 +91,8 @@ endpoint_conditioned_sample(X0, X1, p, t) = endpoint_conditioned_sample(X0, X1, 
 endpoint_conditioned_sample(X0, X1, p::Deterministic, tF, tB) = interpolate(X0, X1, tF, tB)
 
 function endpoint_conditioned_dist(X0, X1, p, tF, tB)
-    @show f = forward(X0, p, tF)
-    @show b = backward(X1, p, tB)
+    f = forward(X0, p, tF)
+    b = backward(X1, p, tB)
     return f ⊙ b
 end
 
@@ -155,11 +155,11 @@ function forward!(dest::CategoricalLikelihood, source::CategoricalLikelihood, pr
     t = expand(elapsed_time, ndims(source.dist))
     K = size(source.dist, 1)
     scals = sum(source.dist, dims = 1)
-    r = process.μ #* 1/(1-1/K)   
+    r = process.μ * 1/(1-1/K)   
     p = (1/K)
-    @show pow = @. exp(-r * t)
-    @show c1 = @. (1 - pow) * p
-    @show c2 = @. pow + (1 - pow) * p
+    pow = @. exp(-r * t)
+    c1 = @. (1 - pow) * p
+    c2 = @. pow + (1 - pow) * p
     dest.dist .= @. (scals - source.dist) * c1 + source.dist * c2
     dest.log_norm_const .= source.log_norm_const
     return dest
@@ -168,7 +168,7 @@ end
 function backward!(dest::CategoricalLikelihood, source::CategoricalLikelihood, process::UniformDiscrete, elapsed_time)
     t = expand(elapsed_time, ndims(source.dist))
     K = size(source.dist, 1)
-    r = process.μ #* 1/(1-1/K)   
+    r = process.μ * 1/(1-1/K)   
     p = (1/K)
     pow = @. exp(-r * t)
     c1 = @. (1 - pow) * p
