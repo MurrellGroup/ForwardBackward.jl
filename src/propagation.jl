@@ -90,6 +90,12 @@ endpoint_conditioned_sample(X0, X1, p, tF, tB) = rand(forward(X0, p, tF) ⊙ bac
 endpoint_conditioned_sample(X0, X1, p, t) = endpoint_conditioned_sample(X0, X1, p, t, clamp.(1 .- t, 0, 1))
 endpoint_conditioned_sample(X0, X1, p::Deterministic, tF, tB) = interpolate(X0, X1, tF, tB)
 
+function endpoint_conditioned_dist(X0, X1, p, tF, tB)
+    @show f = forward(X0, p, tF)
+    @show b = backward(X1, p, tB)
+    return f ⊙ b
+end
+
 function forward!(x_dest::GaussianLikelihood, Xt::GaussianLikelihood, process::OrnsteinUhlenbeck, elapsed_time)
     t = expand(elapsed_time, ndims(Xt.mu))
     μ, v, θ = process.μ, process.v, process.θ
@@ -149,11 +155,11 @@ function forward!(dest::CategoricalLikelihood, source::CategoricalLikelihood, pr
     t = expand(elapsed_time, ndims(source.dist))
     K = size(source.dist, 1)
     scals = sum(source.dist, dims = 1)
-    r = process.μ * 1/(1-1/K)   
+    r = process.μ #* 1/(1-1/K)   
     p = (1/K)
-    pow = @. exp(-r * t)
-    c1 = @. (1 - pow) * p
-    c2 = @. pow + (1 - pow) * p
+    @show pow = @. exp(-r * t)
+    @show c1 = @. (1 - pow) * p
+    @show c2 = @. pow + (1 - pow) * p
     dest.dist .= @. (scals - source.dist) * c1 + source.dist * c2
     dest.log_norm_const .= source.log_norm_const
     return dest
@@ -162,7 +168,7 @@ end
 function backward!(dest::CategoricalLikelihood, source::CategoricalLikelihood, process::UniformDiscrete, elapsed_time)
     t = expand(elapsed_time, ndims(source.dist))
     K = size(source.dist, 1)
-    r = process.μ * 1/(1-1/K)   
+    r = process.μ #* 1/(1-1/K)   
     p = (1/K)
     pow = @. exp(-r * t)
     c1 = @. (1 - pow) * p
@@ -214,3 +220,299 @@ function backward!(dest::CategoricalLikelihood, source::CategoricalLikelihood, p
 end
 
 #To add: DiagonalizadCTMC, HQtPi
+#=
+"""
+    forward(process::HPiQ, x_s::AbstractArray, dt)
+
+Computes the forward transition, supporting batch processing. The input `x_s` is an
+AbstractArray where the first dimension corresponds to states, and subsequent
+dimensions correspond to one or more batch dimensions.
+"""
+function forward!(dest::CategoricalLikelihood, source::CategoricalLikelihood, process::HPiQ, dt)
+    x_s = source.dist
+    (; tree, π) = process
+    N = length(π)
+    @assert size(x_s, 1) == N "First dimension of x_s must match the number of states"
+    
+    no_event = ones(N)
+    transitions = zeros(size(x_s))
+    
+    # Get all dimensions after the first (state) dimension
+    data_dims = size(x_s)[2:end]
+    
+    # Helper to reshape a vector for broadcasting over the data dimensions
+    reshape_for_broadcast(v) = reshape(v, (length(v), ntuple(_ -> 1, length(data_dims))...))
+
+    function forward_recursive!(node::PiNode)
+        isnothing(node.leaf_indices) && return
+        idx = node.leaf_indices
+        isempty(idx) && return
+
+        u = node.u
+        p_no_event_node = exp.(-u * dt)
+        p_event = 1.0 .- p_no_event_node
+        p_no_event_ancestors = no_event[idx[1]]
+        
+        π_partition_view = view(π, idx)
+        π_partition = π_partition_view / sum(π_partition_view)
+        
+        # Create a view into the partition and sum over the state dimension (1)
+        x_s_partition_view = view(x_s, idx, ntuple(_ -> Colon(), length(data_dims))...)
+        x_s_partition_sum = sum(x_s_partition_view, dims=1)
+        
+        # Calculate the transition term, broadcasting π over the data dimensions
+        term = p_event .* p_no_event_ancestors * reshape_for_broadcast(π_partition) .* x_s_partition_sum
+        
+        transitions_view = view(transitions, idx, ntuple(_ -> Colon(), length(data_dims))...)
+        transitions_view .+= term
+        
+        view(no_event, idx) .*= p_no_event_node
+        
+        if !isnothing(node.children)
+            for child in node.children
+                if isa(child, PiNode)
+                    forward_recursive!(child)
+                end
+            end
+        end
+    end
+    forward_recursive!(tree)
+    dest.dist .= reshape_for_broadcast(no_event) .* x_s .+ transitions
+    dest.log_norm_const .= source.log_norm_const
+    return dest
+end
+=#
+
+"""
+    forward!(dest, source, process, dt)
+
+Computes the forward transition, supporting batch processing with per-item time steps.
+
+The input `x_s` is an AbstractArray where the first dimension corresponds to states,
+and subsequent dimensions correspond to one or more batch dimensions.
+
+The time step `dt` can be a scalar or an AbstractArray matching the batch dimensions
+of `x_s`. For example, if `x_s` is a 3D tensor of size (num_states, height, width),
+`dt` can be a matrix of size (height, width), allowing a different time step for
+each column `x_s[:, i, j]`.
+"""
+function forward!(dest::CategoricalLikelihood, source::CategoricalLikelihood, process::HPiQ, dt::Union{Real, AbstractArray})
+    x_s = source.dist
+    (; tree, π) = process
+    N = length(π)
+    @assert size(x_s, 1) == N "First dimension of x_s must match the number of states"
+
+    # Get all dimensions after the first (state) dimension
+    data_dims = size(x_s)[2:end]
+
+    # Validate dt dimensions if it's an array
+    if dt isa AbstractArray
+        @assert size(dt) == data_dims "Dimensions of dt must match the batch dimensions of x_s"
+    end
+    
+    # no_event now has the same dimensions as x_s to hold per-item probabilities
+    no_event = ones(size(x_s))
+    transitions = zeros(size(x_s))
+    
+    # Helper to reshape a state-dimension vector for broadcasting over the data dimensions
+    reshape_state_for_broadcast(v) = reshape(v, (length(v), ntuple(_ -> 1, length(data_dims))...))
+
+    # Helper to reshape a data-dimension array for broadcasting over the state dimension (no-op for scalars)
+    reshape_data_for_broadcast(a) = a isa AbstractArray ? reshape(a, (1, size(a)...)) : a
+
+    function forward_recursive!(node::PiNode)
+        isnothing(node.leaf_indices) && return
+        idx = node.leaf_indices
+        isempty(idx) && return
+
+        u = node.u
+        # p_no_event_node and p_event are now arrays with dimensions matching the batch dimensions
+        p_no_event_node = exp.(-u .* dt) # Broadcasting dt
+        p_event = 1.0 .- p_no_event_node
+        
+        # p_no_event_ancestors is a view into the no_event array.
+        # Using a range idx[1]:idx[1] preserves the singleton dimension, making it a view
+        # of size (1, data_dims...). This simplifies broadcasting later.
+        p_no_event_ancestors = view(no_event, idx[1]:idx[1], ntuple(_ -> Colon(), length(data_dims))...)
+        
+        π_partition_view = view(π, idx)
+        π_partition = π_partition_view / sum(π_partition_view)
+        
+        # Create a view into the partition and sum over the state dimension (1)
+        x_s_partition_view = view(x_s, idx, ntuple(_ -> Colon(), length(data_dims))...)
+        x_s_partition_sum = sum(x_s_partition_view, dims=1)
+        
+        # Calculate the transition term. Broadcasting happens across state and data dimensions.
+        # We explicitly reshape p_event to avoid broadcasting ambiguity between arrays
+        # of different dimensionality, which can cause DimensionMismatch errors.
+        term = (reshape_data_for_broadcast(p_event) .* p_no_event_ancestors) .* reshape_state_for_broadcast(π_partition) .* x_s_partition_sum
+        
+        transitions_view = view(transitions, idx, ntuple(_ -> Colon(), length(data_dims))...)
+        transitions_view .+= term
+        
+        # Update no_event probabilities for the states in the current partition.
+        # p_no_event_node is broadcast over the states in idx.
+        no_event_view = view(no_event, idx, ntuple(_ -> Colon(), length(data_dims))...)
+        no_event_view .*= reshape_data_for_broadcast(p_no_event_node)
+        
+        if !isnothing(node.children)
+            for child in node.children
+                if isa(child, PiNode)
+                    forward_recursive!(child)
+                end
+            end
+        end
+    end
+    forward_recursive!(tree)
+    
+    # Final calculation: remaining probability mass + accumulated transitions
+    dest.dist .= no_event .* x_s .+ transitions
+    dest.log_norm_const .= source.log_norm_const
+    return dest
+end
+
+"""
+    backward!(dest, source, process, dt)
+
+Computes the backward transition, supporting batch processing with per-item time steps.
+
+The input `x_t` is an AbstractArray where the first dimension corresponds to states,
+and subsequent dimensions correspond to one or more batch dimensions.
+
+The time step `dt` can be a scalar or an AbstractArray matching the batch dimensions
+of `x_t`. For example, if `x_t` is a 3D tensor of size (num_states, height, width),
+`dt` can be a matrix of size (height, width), allowing a different time step for
+each column `x_t[:, i, j]`.
+"""
+function backward!(dest::CategoricalLikelihood, source::CategoricalLikelihood, process::HPiQ, dt::Union{Real, AbstractArray})
+    x_t = source.dist
+    (; tree, π) = process
+    N = length(π)
+    @assert size(x_t, 1) == N "First dimension of x_t must match the number of states"
+
+    # Get all dimensions after the first (state) dimension
+    data_dims = size(x_t)[2:end]
+
+    # Validate dt dimensions if it's an array
+    if dt isa AbstractArray
+        @assert size(dt) == data_dims "Dimensions of dt must match the batch dimensions of x_t"
+    end
+
+    # no_event now has the same dimensions as x_t to hold per-item probabilities
+    no_event = ones(size(x_t))
+    transitions = zeros(size(x_t))
+    
+    # Helper to reshape a state-dimension vector for broadcasting over the data dimensions
+    reshape_state_for_broadcast(v) = reshape(v, (length(v), ntuple(_ -> 1, length(data_dims))...))
+
+    # Helper to reshape a data-dimension array for broadcasting over the state dimension (no-op for scalars)
+    reshape_data_for_broadcast(a) = a isa AbstractArray ? reshape(a, (1, size(a)...)) : a
+
+    function backward_recursive!(node::PiNode)
+        isnothing(node.leaf_indices) && return
+        idx = node.leaf_indices
+        isempty(idx) && return
+
+        u = node.u
+        # p_no_event_node and p_event are now arrays with dimensions matching the batch dimensions
+        p_no_event_node = exp.(-u .* dt) # Broadcasting dt
+        p_event = 1.0 .- p_no_event_node
+        
+        # p_no_event_ancestors is a view into the no_event array.
+        # Using a range idx[1]:idx[1] preserves the singleton dimension, making it a view
+        # of size (1, data_dims...).
+        p_no_event_ancestors = view(no_event, idx[1]:idx[1], ntuple(_ -> Colon(), length(data_dims))...)
+        
+        π_partition_view = view(π, idx)
+        π_partition = π_partition_view / sum(π_partition_view)
+        
+        # Create a view into the partition and calculate the weighted sum
+        x_t_partition_view = view(x_t, idx, ntuple(_ -> Colon(), length(data_dims))...)
+        x_t_partition_weighted_sum = sum(reshape_state_for_broadcast(π_partition) .* x_t_partition_view, dims=1)
+        
+        # Calculate the transition term with explicit reshaping to ensure correct broadcasting
+        term = reshape_data_for_broadcast(p_event) .* p_no_event_ancestors .* x_t_partition_weighted_sum
+        
+        transitions_view = view(transitions, idx, ntuple(_ -> Colon(), length(data_dims))...)
+        transitions_view .+= term
+        
+        # Update no_event probabilities for the states in the current partition
+        no_event_view = view(no_event, idx, ntuple(_ -> Colon(), length(data_dims))...)
+        no_event_view .*= reshape_data_for_broadcast(p_no_event_node)
+        
+        if !isnothing(node.children)
+            for child in node.children
+                if isa(child, PiNode)
+                    backward_recursive!(child)
+                end
+            end
+        end
+    end
+
+    backward_recursive!(tree)
+    
+    # Final calculation: remaining probability mass + accumulated transitions
+    dest.dist .= no_event .* x_t .+ transitions
+    dest.log_norm_const .= source.log_norm_const
+    return dest
+end
+
+
+#=
+"""
+    backward(process::HPiQ, x_t::AbstractArray, s::Real, t::Real)
+
+Computes the backward transition, supporting batch processing. The input `x_t` is an
+AbstractArray where the first dimension corresponds to states, and subsequent
+dimensions correspond to one or more batch dimensions.
+"""
+function backward!(dest::CategoricalLikelihood, source::CategoricalLikelihood, process::HPiQ, dt)
+    x_t = source.dist
+    (; tree, π) = process
+    N = length(π)
+    @assert size(x_t, 1) == N "First dimension of x_t must match the number of states"
+
+    no_event = ones(N)
+    transitions = zeros(size(x_t))
+    
+    data_dims = size(x_t)[2:end]
+    reshape_for_broadcast(v) = reshape(v, (length(v), ntuple(_ -> 1, length(data_dims))...))
+
+    function backward_recursive!(node::PiNode)
+        isnothing(node.leaf_indices) && return
+        idx = node.leaf_indices
+        isempty(idx) && return
+
+        u = node.u
+        p_no_event_node = exp(-u * dt)
+        p_event = 1.0 - p_no_event_node
+        p_no_event_ancestors = no_event[idx[1]]
+        
+        π_partition_view = view(π, idx)
+        π_partition = π_partition_view / sum(π_partition_view)
+        
+        x_t_partition_view = view(x_t, idx, ntuple(_ -> Colon(), length(data_dims))...)
+        x_t_partition_weighted_sum = sum(reshape_for_broadcast(π_partition) .* x_t_partition_view, dims=1)
+        
+        term = p_event * p_no_event_ancestors * x_t_partition_weighted_sum
+        
+        transitions_view = view(transitions, idx, ntuple(_ -> Colon(), length(data_dims))...)
+        transitions_view .+= term
+        
+        view(no_event, idx) .*= p_no_event_node
+        
+        if !isnothing(node.children)
+            for child in node.children
+                if isa(child, PiNode)
+                    backward_recursive!(child)
+                end
+            end
+        end
+    end
+
+    backward_recursive!(tree)
+    dest.dist .= reshape_for_broadcast(no_event) .* x_t .+ transitions
+    dest.log_norm_const .= source.log_norm_const
+    return dest
+end
+=#

@@ -172,3 +172,95 @@ function PiQ(r::T,π::Vector{T}; normalize=true) where T <: Real
 end
 
 PiQ(π::Vector{T}; normalize=true) where T <: Real = PiQ(T(1.0), π; normalize=normalize)
+
+abstract type Nodal end
+
+mutable struct PiNode <: Nodal
+    u::Float64
+    parent::Union{PiNode,Nothing}
+    children::Union{Vector{<:Nodal},Nothing}
+    leaf_indices::Union{Vector{<:Int}, Nothing}
+    PiNode(u) = new(u, nothing, nothing, nothing)
+end
+
+mutable struct PiLeaf <: Nodal
+    index::Int64
+    parent::Union{PiNode, Nothing}
+    PiLeaf(index) = new(index, nothing)
+end
+
+struct HPiQ{T} <: DiscreteProcess
+    tree::PiNode
+    π::Vector{T}
+end
+
+function add_child!(node::PiNode, child::Nodal)
+    if isnothing(node.children)
+        node.children = typeof(child)[]
+    end
+    push!(node.children, child)
+    child.parent = node
+end
+
+function init_leaf_indices!(node::PiNode)
+    indices = Int[]
+    if isnothing(node.children)
+        node.leaf_indices = indices
+        return indices
+    end
+    for child in node.children
+        if isa(child, PiLeaf)
+            push!(indices, child.index)
+        elseif isa(child, PiNode)
+            append!(indices, init_leaf_indices!(child))
+        end
+    end
+    node.leaf_indices = sort!(unique!(indices))
+    return node.leaf_indices
+end
+
+# --- Q Matrix Generation Function (from get_q_function artifact) ---
+
+function get_all_nodes!(node::PiNode, nodes::Vector{PiNode})
+    push!(nodes, node)
+    if !isnothing(node.children)
+        for child in node.children
+            if isa(child, PiNode)
+                get_all_nodes!(child, nodes)
+            end
+        end
+    end
+    return nodes
+end
+
+function get_Q(process::HPiQ)
+    (; tree, π) = process
+    N = length(π)
+    Q = zeros(Float64, N, N)
+    all_nodes = PiNode[]
+    get_all_nodes!(tree, all_nodes)
+
+    for node in all_nodes
+        isnothing(node.leaf_indices) && continue
+        idx = node.leaf_indices
+        length(idx) <= 1 && continue
+        u = node.u
+        π_partition_view = view(π, idx)
+        sum_π = sum(π_partition_view)
+        isapprox(sum_π, 0.0) && continue
+        for i_global in idx
+            for j_global in idx
+                if i_global != j_global
+                    Q[i_global, j_global] += u * (π[j_global] / sum_π)
+                end
+            end
+        end
+    end
+
+    for i in 1:N
+        Q[i, i] = -sum(Q[i, :])
+    end
+    return Q
+end
+
+
