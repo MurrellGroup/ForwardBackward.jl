@@ -1,3 +1,5 @@
+#using Flux: onecold
+
 """
     abstract type Process
 
@@ -263,4 +265,29 @@ function get_Q(process::HPiQ)
     return Q
 end
 
+# function get_Q_row(process::HPiQ, Xt::AbstractArray{T}) where T
+#     (; tree, π) = process
+#     N = length(π)
+#     Q = zeros(Float64, size(Xt)...)
+#     all_nodes = PiNode[]
+#     get_all_nodes!(tree, all_nodes)
+#     batch_indices = onecold(Xt) 
+#     for node in all_nodes
+#         isnothing(node.leaf_indices) && continue
+#         idx = node.leaf_indices
+#         length(idx) <= 1 && continue
+#         u = node.u
+#         π_partition_view = view(π, idx)
+#         sum_π = sum(π_partition_view)
+#         isapprox(sum_π, 0.0) && continue
 
+#         for I in CartesianIndices(batch_indices)
+#             for j_global in idx
+#                 if batch_indices[I] != j_global && batch_indices[I] in idx
+#                     Q[j_global, I[1], I[2]] += u * (π[j_global] / sum_π)
+#                 end
+#             end
+#         end
+#     end
+#     return Q
+# end

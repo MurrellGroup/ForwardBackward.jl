@@ -305,10 +305,10 @@ function forward!(dest::CategoricalLikelihood, source::CategoricalLikelihood, pr
     # Get all dimensions after the first (state) dimension
     data_dims = size(x_s)[2:end]
 
-    # Validate dt dimensions if it's an array
-    if dt isa AbstractArray
-        @assert size(dt) == data_dims "Dimensions of dt must match the batch dimensions of x_s"
-    end
+    # # Validate dt dimensions if it's an array
+    # if dt isa AbstractArray
+    #     @assert size(dt) == data_dims "Dimensions of dt must match the batch dimensions of x_s"
+    # end
     
     # no_event now has the same dimensions as x_s to hold per-item probabilities
     no_event = ones(size(x_s))
@@ -393,10 +393,13 @@ function backward!(dest::CategoricalLikelihood, source::CategoricalLikelihood, p
     # Get all dimensions after the first (state) dimension
     data_dims = size(x_t)[2:end]
 
-    # Validate dt dimensions if it's an array
-    if dt isa AbstractArray
-        @assert size(dt) == data_dims "Dimensions of dt must match the batch dimensions of x_t"
-    end
+    # # Validate dt dimensions if it's an array
+    # if dt isa AbstractArray
+    #     println(size(dt))
+    #     println(size(data_dims))
+
+    #     @assert size(dt) == data_dims "Dimensions of dt must match the batch dimensions of x_t"
+    # end
 
     # no_event now has the same dimensions as x_t to hold per-item probabilities
     no_event = ones(size(x_t))
