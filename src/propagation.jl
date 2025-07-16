@@ -296,6 +296,7 @@ of `x_s`. For example, if `x_s` is a 3D tensor of size (num_states, height, widt
 `dt` can be a matrix of size (height, width), allowing a different time step for
 each column `x_s[:, i, j]`.
 """
+#=
 function forward!(dest::CategoricalLikelihood, source::CategoricalLikelihood, process::HPiQ, dt::Union{Real, AbstractArray})
     x_s = source.dist
     (; tree, π) = process
@@ -305,6 +306,7 @@ function forward!(dest::CategoricalLikelihood, source::CategoricalLikelihood, pr
     # Get all dimensions after the first (state) dimension
     data_dims = size(x_s)[2:end]
 
+    # TODO
     # # Validate dt dimensions if it's an array
     # if dt isa AbstractArray
     #     @assert size(dt) == data_dims "Dimensions of dt must match the batch dimensions of x_s"
@@ -370,6 +372,168 @@ function forward!(dest::CategoricalLikelihood, source::CategoricalLikelihood, pr
     dest.log_norm_const .= source.log_norm_const
     return dest
 end
+=#
+
+function forward!(
+    dest::CategoricalLikelihood, 
+    source::CategoricalLikelihood, 
+    process::HPiQ, 
+    dt::Union{Real, AbstractArray}
+)
+    x_s = source.dist
+    (; tree, π) = process
+    N = length(π)
+    @assert size(x_s, 1) == N "First dimension of x_s must match the number of states"
+
+    T=Float32
+    # --- Pre-allocate all necessary workspace buffers ---
+    data_dims = size(x_s)[2:end]
+    # Use two separate, dedicated buffers to prevent memory overwriting bugs.
+    p_no_event_buffer = similar(x_s, (data_dims...))
+    p_event_buffer = similar(x_s, (data_dims...)) 
+    sum_buffer = similar(x_s, (1, data_dims...))
+
+    # Accumulate transitions directly into the destination array
+    fill!(dest.dist, T(0.0))
+    no_event = ones(size(x_s))
+    
+    reshape_state_for_broadcast(v) = reshape(v, (length(v), ntuple(_ -> 1, length(data_dims))...))
+    reshape_data_for_broadcast(a) = a isa AbstractArray ? reshape(a, (1, size(a)...)) : a
+
+    function forward_recursive!(node::PiNode)
+        isnothing(node.leaf_indices) && return
+        idx = node.leaf_indices
+        isempty(idx) && return
+
+        u = node.u
+        
+        # --- Use dedicated buffers for each calculation ---
+        # 1. Calculate p_no_event_node and p_event into their own buffers.
+        p_no_event_buffer .= exp.(-u .* dt)
+        p_event_buffer .= T(1.0) .- p_no_event_buffer
+
+        # 2. Read the ANCESTOR survival probability. This is read BEFORE no_event is updated.
+        p_no_event_ancestors = view(no_event, idx[1]:idx[1], ntuple(_ -> Colon(), length(data_dims))...)
+        
+        # 3. Calculate the transition term using the correct values.
+        π_partition_view = view(π, idx)
+        π_partition = π_partition_view / sum(π_partition_view)
+        
+        x_s_partition_view = view(x_s, idx, ntuple(_ -> Colon(), length(data_dims))...)
+        sum!(sum_buffer, x_s_partition_view)
+        x_s_partition_sum = sum_buffer
+        
+        term = (reshape_data_for_broadcast(p_event_buffer) .* p_no_event_ancestors) .* reshape_state_for_broadcast(π_partition) .* x_s_partition_sum
+        
+        dest_view = view(dest.dist, idx, ntuple(_ -> Colon(), length(data_dims))...)
+        dest_view .+= term
+        
+        # 4. NOW, update the no_event array for the next level of recursion.
+        no_event_view = view(no_event, idx, ntuple(_ -> Colon(), length(data_dims))...)
+        no_event_view .*= reshape_data_for_broadcast(p_no_event_buffer)
+        
+        if !isnothing(node.children)
+            for child in node.children
+                if isa(child, PiNode)
+                    forward_recursive!(child)
+                end
+            end
+        end
+    end
+    
+    forward_recursive!(tree)
+    
+    # Final update: dest.dist contains transitions, now add the no_event part.
+    dest.dist .= no_event .* x_s .+ dest.dist
+    
+    dest.log_norm_const .= source.log_norm_const
+    return dest
+end
+
+# function forward!(
+#     dest::CategoricalLikelihood, 
+#     source::CategoricalLikelihood, 
+#     process::HPiQ, 
+#     dt::Union{Real, AbstractArray};
+#     # Note: dt_dim logic is removed for clarity, but can be added back in.
+# )
+#     x_s = source.dist
+#     (; tree, π) = process
+#     N = length(π)
+#     @assert size(x_s, 1) == N "First dimension of x_s must match the number of states"
+
+#     # --- OPTIMIZATION 1: Pre-allocate workspace buffers ---
+#     # These buffers will be reused in every recursive call to avoid new allocations.
+#     data_dims = size(x_s)[2:end]
+#     # Buffer for p_no_event and p_event
+#     p_buffer = similar(x_s, (data_dims...))
+#     # Buffer for the sum over a partition
+#     sum_buffer = similar(x_s, (1, data_dims...))
+
+#     # --- OPTIMIZATION 2: Eliminate the `transitions` array ---
+#     # We will accumulate transitions directly into the destination array.
+#     fill!(dest.dist, 0)
+#     # The no_event array is still needed as it's built recursively.
+#     no_event = ones(size(x_s))
+    
+#     # Helper functions remain the same
+#     reshape_state_for_broadcast(v) = reshape(v, (length(v), ntuple(_ -> 1, length(data_dims))...))
+#     reshape_data_for_broadcast(a) = a isa AbstractArray ? reshape(a, (1, size(a)...)) : a
+
+#     function forward_recursive!(node::PiNode)
+#         isnothing(node.leaf_indices) && return
+#         idx = node.leaf_indices
+#         isempty(idx) && return
+
+#         u = node.u
+        
+#         # --- OPTIMIZATION 3: Use buffers for intermediate calculations ---
+#         # Reuse p_buffer for p_no_event_node (no new allocation)
+#         p_buffer .= exp.(-u .* dt)
+#         p_no_event_node = p_buffer
+        
+#         p_no_event_ancestors = view(no_event, idx[1]:idx[1], ntuple(_ -> Colon(), length(data_dims))...)
+        
+#         π_partition_view = view(π, idx)
+#         π_partition = π_partition_view / sum(π_partition_view)
+        
+#         x_s_partition_view = view(x_s, idx, ntuple(_ -> Colon(), length(data_dims))...)
+#         # Use in-place sum! into sum_buffer (no new allocation)
+#         sum!(sum_buffer, x_s_partition_view)
+#         x_s_partition_sum = sum_buffer
+
+#         # Reuse p_buffer for p_event (no new allocation)
+#         p_buffer .= 1.0 .- p_no_event_node
+#         p_event = p_buffer
+        
+#         # This line still allocates a temporary array for the result of the right-hand side,
+#         # but we have eliminated the other major allocations within the recursion.
+#         term = (reshape_data_for_broadcast(p_event) .* p_no_event_ancestors) .* reshape_state_for_broadcast(π_partition) .* x_s_partition_sum
+        
+#         # Accumulate directly into the destination array's view
+#         dest_view = view(dest.dist, idx, ntuple(_ -> Colon(), length(data_dims))...)
+#         dest_view .+= term
+        
+#         no_event_view = view(no_event, idx, ntuple(_ -> Colon(), length(data_dims))...)
+#         no_event_view .*= reshape_data_for_broadcast(p_no_event_node)
+        
+#         if !isnothing(node.children)
+#             for child in node.children
+#                 if isa(child, PiNode)
+#                     forward_recursive!(child)
+#                 end
+#             end
+#         end
+#     end
+    
+#     forward_recursive!(tree)
+    
+#     # --- OPTIMIZATION 4: Final update in-place ---
+#     # `dest.dist` already contains the transitions. Now add the no_event part.
+#     dest.dist .= no_event .* x_s .+ dest.dist
+#     dest.log_norm_const .= source.log_norm_const
+#     return dest
+# end
 
 """
     backward!(dest, source, process, dt)
@@ -384,6 +548,7 @@ of `x_t`. For example, if `x_t` is a 3D tensor of size (num_states, height, widt
 `dt` can be a matrix of size (height, width), allowing a different time step for
 each column `x_t[:, i, j]`.
 """
+#=
 function backward!(dest::CategoricalLikelihood, source::CategoricalLikelihood, process::HPiQ, dt::Union{Real, AbstractArray})
     x_t = source.dist
     (; tree, π) = process
@@ -459,6 +624,90 @@ function backward!(dest::CategoricalLikelihood, source::CategoricalLikelihood, p
     dest.log_norm_const .= source.log_norm_const
     return dest
 end
+=#
+
+function backward!(
+    dest::CategoricalLikelihood, 
+    source::CategoricalLikelihood, 
+    process::HPiQ, 
+    dt::Union{Real, AbstractArray}
+)
+
+    T = Float32
+    x_t = source.dist
+    (; tree, π) = process
+    N = length(π)
+    @assert size(x_t, 1) == N "First dimension of x_t must match the number of states"
+
+    # --- Pre-allocate all necessary workspace buffers ---
+    data_dims = size(x_t)[2:end]
+    # Use two separate, dedicated buffers to prevent memory overwriting bugs.
+    p_no_event_buffer = similar(x_t, (data_dims...))
+    p_event_buffer = similar(x_t, (data_dims...)) 
+    sum_buffer = similar(x_t, (1, data_dims...))
+
+    # Accumulate transitions directly into the destination array
+    # Use 0.0f0 for Float32 compatibility, or just 0.0 for Float64
+    fill!(dest.dist, T(0.0)) 
+    no_event = ones(size(x_t))
+    
+    reshape_state_for_broadcast(v) = reshape(v, (length(v), ntuple(_ -> 1, length(data_dims))...))
+    reshape_data_for_broadcast(a) = a isa AbstractArray ? reshape(a, (1, size(a)...)) : a
+
+    function backward_recursive!(node::PiNode)
+        isnothing(node.leaf_indices) && return
+        idx = node.leaf_indices
+        isempty(idx) && return
+
+        u = node.u
+        
+        # --- Use dedicated buffers for each calculation ---
+        # 1. Calculate p_no_event_node and p_event into their own buffers.
+        p_no_event_buffer .= exp.(-u .* dt)
+        p_event_buffer .= T(1.0) .- p_no_event_buffer # Use 1.0f0 for Float32
+
+        # 2. Read the ANCESTOR survival probability. This is read BEFORE no_event is updated.
+        p_no_event_ancestors = view(no_event, idx[1]:idx[1], ntuple(_ -> Colon(), length(data_dims))...)
+        
+        # 3. Calculate the transition term using the correct values.
+        π_partition_view = view(π, idx)
+        π_partition = π_partition_view / sum(π_partition_view)
+        
+        x_t_partition_view = view(x_t, idx, ntuple(_ -> Colon(), length(data_dims))...)
+        
+        # The element-wise product here still allocates a temporary array, but its size
+        # is limited to the partition, not the full data dimension. The main memory
+        # savings from buffering the large arrays are preserved.
+        weighted_view = reshape_state_for_broadcast(π_partition) .* x_t_partition_view
+        sum!(sum_buffer, weighted_view)
+        x_t_partition_weighted_sum = sum_buffer
+        
+        term = reshape_data_for_broadcast(p_event_buffer) .* p_no_event_ancestors .* x_t_partition_weighted_sum
+        
+        dest_view = view(dest.dist, idx, ntuple(_ -> Colon(), length(data_dims))...)
+        dest_view .+= term
+        
+        # 4. NOW, update the no_event array for the next level of recursion.
+        no_event_view = view(no_event, idx, ntuple(_ -> Colon(), length(data_dims))...)
+        no_event_view .*= reshape_data_for_broadcast(p_no_event_buffer)
+        
+        if !isnothing(node.children)
+            for child in node.children
+                if isa(child, PiNode)
+                    backward_recursive!(child)
+                end
+            end
+        end
+    end
+
+    backward_recursive!(tree)
+    
+    # Final update: dest.dist contains transitions, now add the no_event part.
+    dest.dist .= no_event .* x_t .+ dest.dist
+    
+    dest.log_norm_const .= source.log_norm_const
+    return dest
+end
 
 
 #=
@@ -519,3 +768,4 @@ function backward!(dest::CategoricalLikelihood, source::CategoricalLikelihood, p
     return dest
 end
 =#
+

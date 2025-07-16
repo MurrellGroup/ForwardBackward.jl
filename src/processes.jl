@@ -177,12 +177,12 @@ PiQ(π::Vector{T}; normalize=true) where T <: Real = PiQ(T(1.0), π; normalize=n
 
 abstract type Nodal end
 
-mutable struct PiNode <: Nodal
-    u::Float64
-    parent::Union{PiNode,Nothing}
+mutable struct PiNode{T} <: Nodal
+    u::T
+    parent::Union{PiNode{T}, Nothing}
     children::Union{Vector{<:Nodal},Nothing}
     leaf_indices::Union{Vector{<:Int}, Nothing}
-    PiNode(u) = new(u, nothing, nothing, nothing)
+    PiNode(u::T) where T = new{T}(u, nothing, nothing, nothing)
 end
 
 mutable struct PiLeaf <: Nodal
@@ -198,7 +198,7 @@ end
 
 function add_child!(node::PiNode, child::Nodal)
     if isnothing(node.children)
-        node.children = typeof(child)[]
+        node.children = Nodal[]
     end
     push!(node.children, child)
     child.parent = node
@@ -264,6 +264,51 @@ function get_Q(process::HPiQ)
     end
     return Q
 end
+
+function create_balanced_tree(internal_nodes, T)
+    tree = PiNode(T(1.0))
+    internal_nodes = internal_nodes
+    nodes = [tree]
+    for _ in 1:internal_nodes
+        isempty(nodes) && error("Queue exhausted unexpectedly.")
+        
+        parent = popfirst!(nodes)
+        
+        child1 = PiNode(T(1.0))
+        ForwardBackward.add_child!(parent ,child1)
+        push!(nodes, child1)
+        
+        child2 = PiNode(T(1.0))
+        ForwardBackward.add_child!(parent, child2)
+        push!(nodes, child2)
+    end
+
+    return tree
+end
+
+function modify_tips!(tree)
+    nodes = [tree]
+    index = 0
+    while !isempty(nodes)
+        node = popfirst!(nodes)
+        if isnothing(node.children)
+            #replace with PiLeaf
+            index = index + 1
+            parent = node.parent
+            ind_in_parent = findfirst(isequal(node), parent.children)
+            new_leaf = PiLeaf(index)
+            new_leaf.parent = parent
+            parent.children[ind_in_parent] = new_leaf
+        else
+            for child in node.children
+                push!(nodes, child)
+            end
+        end
+    end
+
+    return index
+end
+
 
 # function get_Q_row(process::HPiQ, Xt::AbstractArray{T}) where T
 #     (; tree, π) = process
