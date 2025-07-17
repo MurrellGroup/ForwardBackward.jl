@@ -92,7 +92,6 @@ using Test
         π = [0.1, 0.4, 0.3, 0.2]
         p_hpiq = HPiQ(tree, π)
         N = length(π)
-        
         @testset "create Q" begin
             Q = [-2.5; 0.5; 0.1; 0.1;; 2.0; -1.0; 0.4; 0.4;; 0.3;  0.3; -1.9; 2.1;; 0.2; 0.2; 1.4; -2.6;;]
             @test isapprox(Q, ForwardBackward.get_Q(p_hpiq), atol=1e-9)
@@ -133,5 +132,32 @@ using Test
                 @test isapprox(Xt_hpiq.log_norm_const, Xt_general.log_norm_const, atol=1e-9)
             end
         end
+
+        tree = ForwardBackward.create_balanced_tree(1000, Float64, true)
+        leafs = ForwardBackward.modify_tips!(tree)
+        init_leaf_indices!(tree)
+        π = ones(leafs)/leafs
+        big_p_hpiq = HPiQ(tree, π)
+
+        @testset "Large Tree PHiQ Test" begin
+            
+            Q = ForwardBackward.get_Q(big_p_hpiq)
+            p_general = GeneralDiscrete(Q)
+                    
+            X0 = CategoricalLikelihood(rand(leafs, 10)) # Initial state
+            dt = 0.456 # Time step
+
+            for f in [forward, backward]
+                # Evolve with both processes
+                Xt_hpiq = f(X0, big_p_hpiq, dt)
+                Xt_general = f(X0, p_general, dt)
+
+                # Test for equivalence
+                @test isapprox(Xt_hpiq.dist, Xt_general.dist, atol=1e-9)
+                @test isapprox(Xt_hpiq.log_norm_const, Xt_general.log_norm_const, atol=1e-9)
+            end    
+
+        end
+
     end
 end

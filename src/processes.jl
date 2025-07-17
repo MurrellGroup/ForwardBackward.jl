@@ -252,6 +252,7 @@ function get_Q(process::HPiQ)
         isapprox(sum_π, 0.0) && continue
         for i_global in idx
             for j_global in idx
+
                 if i_global != j_global
                     Q[i_global, j_global] += u * (π[j_global] / sum_π)
                 end
@@ -262,11 +263,15 @@ function get_Q(process::HPiQ)
     for i in 1:N
         Q[i, i] = -sum(Q[i, :])
     end
+
     return Q
 end
 
-function create_balanced_tree(internal_nodes, T)
-    tree = PiNode(T(1.0))
+function create_balanced_tree(internal_nodes, T=Float64, rdm=false)
+
+    rate() = rdm ? T(rand()) : T(1.0)
+
+    tree = PiNode(rate())
     internal_nodes = internal_nodes
     nodes = [tree]
     for _ in 1:internal_nodes
@@ -274,11 +279,11 @@ function create_balanced_tree(internal_nodes, T)
         
         parent = popfirst!(nodes)
         
-        child1 = PiNode(T(1.0))
+        child1 = PiNode(rate())
         ForwardBackward.add_child!(parent ,child1)
         push!(nodes, child1)
         
-        child2 = PiNode(T(1.0))
+        child2 = PiNode(rate())
         ForwardBackward.add_child!(parent, child2)
         push!(nodes, child2)
     end
