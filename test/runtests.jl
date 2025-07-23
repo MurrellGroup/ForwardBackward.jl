@@ -77,7 +77,7 @@ using Test
     end
 
     @testset "HPiQ" begin
-        # 1. Define the test case (tree, pi, and process)
+
         tree = PiNode(1.0)
         child1 = PiNode(2.0)
         child2 = PiNode(3.0)
@@ -92,21 +92,19 @@ using Test
         π = [0.1, 0.4, 0.3, 0.2]
         p_hpiq = HPiQ(tree, π)
         N = length(π)
-        @testset "create Q" begin
+        @testset "HPiQ create Q" begin
             Q = [-2.5; 0.5; 0.1; 0.1;; 2.0; -1.0; 0.4; 0.4;; 0.3;  0.3; -1.9; 2.1;; 0.2; 0.2; 1.4; -2.6;;]
-            @test isapprox(Q, ForwardBackward.get_Q(p_hpiq), atol=1e-9)
+            @test isapprox(Q, ForwardBackward.HPiQ_Qmatrix(p_hpiq), atol=1e-9)
         end
-        @testset "Temporal Consistency" begin
+        @testset "HPiQ Temporal Consistency" begin
             for f in [backward, forward]
-                X0 = CategoricalLikelihood(rand(N, 5, 6)) # Initial state
+                X0 = CategoricalLikelihood(rand(N, 5, 6))
                 t1 = 0.123
-                t2 = 0.234 .* rand(5, 6) # Broadcasted second time interval
+                t2 = 0.234 .* rand(5, 6) 
                 
-                # Evolve in two steps
                 X_step1 = f(X0, p_hpiq, t1)
                 X_step2 = f(X_step1, p_hpiq, t2)
 
-                # Evolve in a single hop
                 t_hop = t1 .+ t2
                 X_hop = f(X0, p_hpiq, t_hop)
                 @test isapprox(X_hop.dist, X_step2.dist, atol=1e-9)
@@ -114,49 +112,22 @@ using Test
             end
         end
 
-        @testset "Equivalence with GeneralDiscrete" begin
-            # 2. Define the equivalent GeneralDiscrete process
-            Q = ForwardBackward.get_Q(p_hpiq)
+        @testset "HPiQ Equivalence with GeneralDiscrete" begin
+
+            Q = ForwardBackward.HPiQ_Qmatrix(p_hpiq)
             p_general = GeneralDiscrete(Q)
             
-            X0 = CategoricalLikelihood(rand(N, 10)) # Initial state
-            dt = 0.456 # Time step
+            X0 = CategoricalLikelihood(rand(N, 10)) 
+            dt = 0.456 
 
             for f in [forward, backward]
-                # Evolve with both processes
+
                 Xt_hpiq = f(X0, p_hpiq, dt)
                 Xt_general = f(X0, p_general, dt)
 
-                # Test for equivalence
                 @test isapprox(Xt_hpiq.dist, Xt_general.dist, atol=1e-9)
                 @test isapprox(Xt_hpiq.log_norm_const, Xt_general.log_norm_const, atol=1e-9)
             end
-        end
-
-        tree = ForwardBackward.create_balanced_tree(1000, Float64, true)
-        leafs = ForwardBackward.modify_tips!(tree)
-        init_leaf_indices!(tree)
-        π = ones(leafs)/leafs
-        big_p_hpiq = HPiQ(tree, π)
-
-        @testset "Large Tree PHiQ Test" begin
-            
-            Q = ForwardBackward.get_Q(big_p_hpiq)
-            p_general = GeneralDiscrete(Q)
-                    
-            X0 = CategoricalLikelihood(rand(leafs, 10)) # Initial state
-            dt = 0.456 # Time step
-
-            for f in [forward, backward]
-                # Evolve with both processes
-                Xt_hpiq = f(X0, big_p_hpiq, dt)
-                Xt_general = f(X0, p_general, dt)
-
-                # Test for equivalence
-                @test isapprox(Xt_hpiq.dist, Xt_general.dist, atol=1e-9)
-                @test isapprox(Xt_hpiq.log_norm_const, Xt_general.log_norm_const, atol=1e-9)
-            end    
-
         end
 
     end

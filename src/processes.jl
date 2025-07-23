@@ -1,5 +1,3 @@
-#using Flux: onecold
-
 """
     abstract type Process
 
@@ -175,8 +173,25 @@ end
 
 PiQ(π::Vector{T}; normalize=true) where T <: Real = PiQ(T(1.0), π; normalize=normalize)
 
+"""
+    abstract type Nodal <: Nodal
+
+    
+    Base type for tree nodes which is used to define the PHiQ process.
+"""
 abstract type Nodal end
 
+"""
+    mutable struct PiNode{T} <: Nodal
+
+Internal node type for The PHiQ tree.
+    
+# Parameters
+- `u`: Rate parameter
+- `parent`: Parent node
+- `children`: Children nodes
+- `leaf_indices`: State indices of descendent leaf nodes
+"""
 mutable struct PiNode{T} <: Nodal
     u::T
     parent::Union{PiNode{T}, Nothing}
@@ -185,17 +200,75 @@ mutable struct PiNode{T} <: Nodal
     PiNode(u::T) where T = new{T}(u, nothing, nothing, nothing)
 end
 
+"""
+    mutable struct PiLeaf{T} <: Nodal
+
+A PiLeaf node is a representation of a discrete state.
+
+# Parameters
+- `index`: State index
+- `parent`: parent node
+"""
 mutable struct PiLeaf <: Nodal
     index::Int64
     parent::Union{PiNode, Nothing}
     PiLeaf(index) = new(index, nothing)
 end
 
+"""
+    struct HPiQ{T} <: DiscreteProcess
+    
+Discrete-state continuous-time process with an equilibrium vector `π` and a hierichal tree structure `tree`, which imposes a hierichal structure where transition events can occur for a subset of the states. 
+Note, remember to call `init_leaf_indicies!` to correctly collect descendent leaf states for internal nodes, this is needed to call e.g. forward and backward.
+
+# Parameters
+- `tree`: Root node of a tree
+- `π`: equilibrium vector
+
+# Examples
+```julia
+
+# The root
+tree = PiNode(1.0) 
+
+#Internal Nodes
+child1 = PiNode(2.0) 
+child2 = PiNode(3.0)
+
+add_child!(tree, child1)
+add_child!(tree, child2)
+
+# States
+leaf1 = PiLeaf(1)
+leaf2 = PiLeaf(2)
+leaf3 = PiLeaf(3)
+leaf4 = PiLeaf(4)
+
+add_child!(child1, leaf1)
+add_child!(child1, leaf2)
+add_child!(child2, leaf3)
+add_child!(child2, leaf4)
+
+init_leaf_indices!(tree)
+π = [0.2, 0.3, 0.4, 0.1]
+
+HPiQ_process = HPiQ(tree, π)
+```
+"""
 struct HPiQ{T} <: DiscreteProcess
     tree::PiNode
     π::Vector{T}
 end
 
+"""
+    add_child!(node::PiNode, child::Nodal)
+
+Helper function for the construction of a HPiQ tree.
+    
+# Parameters
+- `node`: The parent node
+- `child`: The child node 
+"""
 function add_child!(node::PiNode, child::Nodal)
     if isnothing(node.children)
         node.children = Nodal[]
@@ -204,6 +277,14 @@ function add_child!(node::PiNode, child::Nodal)
     child.parent = node
 end
 
+"""
+    init_leaf_indices!(node::PiNode)
+
+This function assigns the state indices of its descendent leaf nodes to each internal node in a HPiQ tree.
+
+# Parameters
+- `node`: The root node of the tree 
+"""
 function init_leaf_indices!(node::PiNode)
     indices = Int[]
     if isnothing(node.children)
@@ -221,8 +302,7 @@ function init_leaf_indices!(node::PiNode)
     return node.leaf_indices
 end
 
-# --- Q Matrix Generation Function (from get_q_function artifact) ---
-
+# Gets all internal nodes of a HPiQ tree
 function get_all_nodes!(node::PiNode, nodes::Vector{PiNode})
     push!(nodes, node)
     if !isnothing(node.children)
@@ -235,7 +315,8 @@ function get_all_nodes!(node::PiNode, nodes::Vector{PiNode})
     return nodes
 end
 
-function get_Q(process::HPiQ)
+# This maps HPiQ process to its corresponding transition rate matrix.
+function HPiQ_Qmatrix(process::HPiQ)
     (; tree, π) = process
     N = length(π)
     Q = zeros(Float64, N, N)
@@ -266,78 +347,3 @@ function get_Q(process::HPiQ)
 
     return Q
 end
-
-function create_balanced_tree(internal_nodes, T=Float64, rdm=false)
-
-    rate() = rdm ? T(rand()) : T(1.0)
-
-    tree = PiNode(rate())
-    internal_nodes = internal_nodes
-    nodes = [tree]
-    for _ in 1:internal_nodes
-        isempty(nodes) && error("Queue exhausted unexpectedly.")
-        
-        parent = popfirst!(nodes)
-        
-        child1 = PiNode(rate())
-        ForwardBackward.add_child!(parent ,child1)
-        push!(nodes, child1)
-        
-        child2 = PiNode(rate())
-        ForwardBackward.add_child!(parent, child2)
-        push!(nodes, child2)
-    end
-
-    return tree
-end
-
-function modify_tips!(tree)
-    nodes = [tree]
-    index = 0
-    while !isempty(nodes)
-        node = popfirst!(nodes)
-        if isnothing(node.children)
-            #replace with PiLeaf
-            index = index + 1
-            parent = node.parent
-            ind_in_parent = findfirst(isequal(node), parent.children)
-            new_leaf = PiLeaf(index)
-            new_leaf.parent = parent
-            parent.children[ind_in_parent] = new_leaf
-        else
-            for child in node.children
-                push!(nodes, child)
-            end
-        end
-    end
-
-    return index
-end
-
-
-# function get_Q_row(process::HPiQ, Xt::AbstractArray{T}) where T
-#     (; tree, π) = process
-#     N = length(π)
-#     Q = zeros(Float64, size(Xt)...)
-#     all_nodes = PiNode[]
-#     get_all_nodes!(tree, all_nodes)
-#     batch_indices = onecold(Xt) 
-#     for node in all_nodes
-#         isnothing(node.leaf_indices) && continue
-#         idx = node.leaf_indices
-#         length(idx) <= 1 && continue
-#         u = node.u
-#         π_partition_view = view(π, idx)
-#         sum_π = sum(π_partition_view)
-#         isapprox(sum_π, 0.0) && continue
-
-#         for I in CartesianIndices(batch_indices)
-#             for j_global in idx
-#                 if batch_indices[I] != j_global && batch_indices[I] in idx
-#                     Q[j_global, I[1], I[2]] += u * (π[j_global] / sum_π)
-#                 end
-#             end
-#         end
-#     end
-#     return Q
-# end
