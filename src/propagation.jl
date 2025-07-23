@@ -220,26 +220,20 @@ function forward!(
     elapsed_time::Union{Real, AbstractArray}
 )
     dt = elapsed_time
-
     x_s = source.dist
     (; tree, π) = process
     T = eltype(π)
     N = length(π)
-
     @assert size(x_s, 1) == N "First dimension of x_s must match the number of states"
-
-
     data_dims = size(x_s)[2:end]
-
     p_no_event_buffer = similar(x_s, (data_dims...)) 
     p_event_buffer = similar(x_s, (data_dims...)) 
     sum_buffer = similar(x_s, (1, data_dims...))
-
     fill!(dest.dist, T(0.0))
     no_event = ones(size(x_s))
     
-    reshape_state_for_broadcast(v) = reshape(v, (length(v), ntuple(_ -> 1, length(data_dims))...))
-    reshape_data_for_broadcast(a) = a isa AbstractArray ? reshape(a, (1, size(a)...)) : a
+    expand_to_data_dims(v) = reshape(v, (length(v), ntuple(_ -> 1, length(data_dims))...))
+    expand_to_state_dim(a) = a isa AbstractArray ? reshape(a, (1, size(a)...)) : a
 
     function forward_recursive!(node::PiNode)
         isnothing(node.leaf_indices) && return
@@ -251,7 +245,6 @@ function forward!(
         p_no_event_buffer .= exp.(-u .* dt) #(DDs...)
         p_event_buffer .= T(1.0) .- p_no_event_buffer #(DDs...)
 
-        # Read the ANCESTOR no event probability.
         p_no_event_ancestors = view(no_event, idx[1]:idx[1], ntuple(_ -> Colon(), length(data_dims))...) #(1, DDs...)
         
         π_partition_view = view(π, idx) #(Leafs,)
@@ -262,13 +255,13 @@ function forward!(
         x_s_partition_sum = sum_buffer #(1, DDs...)
         
         # Brodcasting dimensions are: ( (1, DDs...) .*  (1, DDs) ) .* (Leafs, ntuple(Returns(1), length(data_dims))...) .* (1, DDs...)
-        term = (reshape_data_for_broadcast(p_event_buffer) .* p_no_event_ancestors) .* reshape_state_for_broadcast(π_partition) .* x_s_partition_sum #(Leafs, DDs...)
+        term = (expand_to_state_dim(p_event_buffer) .* p_no_event_ancestors) .* expand_to_data_dims(π_partition) .* x_s_partition_sum #(Leafs, DDs...)
 
         dest_view = view(dest.dist, idx, ntuple(_ -> Colon(), length(data_dims))...) #(Leafs, DDs...)
         dest_view .+= term #(Leafs, DDs...)
         
         no_event_view = view(no_event, idx, ntuple(_ -> Colon(), length(data_dims))...) #(Leafs, DDs...)
-        no_event_view .*= reshape_data_for_broadcast(p_no_event_buffer) #(Leafs, DDs..)
+        no_event_view .*= expand_to_state_dim(p_no_event_buffer) #(Leafs, DDs..)
         
         if !isnothing(node.children)
             for child in node.children
@@ -297,20 +290,17 @@ function backward!(
     x_t = source.dist
     (; tree, π) = process
     T = eltype(π)
-
     N = length(π)
     @assert size(x_t, 1) == N "First dimension of x_t must match the number of states"
     data_dims = size(x_t)[2:end]
-
     p_no_event_buffer = similar(x_t, (data_dims...)) 
     p_event_buffer = similar(x_t, (data_dims...))  
     sum_buffer = similar(x_t, (1, data_dims...)) 
-
     fill!(dest.dist, T(0.0)) 
     no_event = ones(size(x_t)) 
     
-    reshape_state_for_broadcast(v) = reshape(v, (length(v), ntuple(_ -> 1, length(data_dims))...))
-    reshape_data_for_broadcast(a) = a isa AbstractArray ? reshape(a, (1, size(a)...)) : a
+    expand_to_data_dims(v) = reshape(v, (length(v), ntuple(_ -> 1, length(data_dims))...))
+    expand_to_state_dim(a) = a isa AbstractArray ? reshape(a, (1, size(a)...)) : a
 
     function backward_recursive!(node::PiNode)
         isnothing(node.leaf_indices) && return
@@ -330,18 +320,18 @@ function backward!(
         x_t_partition_view = view(x_t, idx, ntuple(_ -> Colon(), length(data_dims))...) #(Leafs, DDs...)
         
         # Brodcasting dimensions are: (Leafs, ntuple(Returns(1), length(data_dims))...) .* (Leafs, DDs...)
-        weighted_view = reshape_state_for_broadcast(π_partition) .* x_t_partition_view #(Leafs, DDs...)
+        weighted_view = expand_to_data_dims(π_partition) .* x_t_partition_view #(Leafs, DDs...)
         sum!(sum_buffer, weighted_view)
         x_t_partition_weighted_sum = sum_buffer #(1, DDs...)
         
         # Brodcasting dimensions are: ( (1, DDs...) .*  (1, DDs...) ) .* (1, DDs...)
-        term = reshape_data_for_broadcast(p_event_buffer) .* p_no_event_ancestors .* x_t_partition_weighted_sum #(1, DDs...)
+        term = expand_to_state_dim(p_event_buffer) .* p_no_event_ancestors .* x_t_partition_weighted_sum #(1, DDs...)
         
         dest_view = view(dest.dist, idx, ntuple(_ -> Colon(), length(data_dims))...) #(Leafs, DDs...)
         dest_view .+= term #(Leafs, DDs...)
         
         no_event_view = view(no_event, idx, ntuple(_ -> Colon(), length(data_dims))...)  #(Leafs, DDs...)
-        no_event_view .*= reshape_data_for_broadcast(p_no_event_buffer) #(Leafs, DDs...)
+        no_event_view .*= expand_to_state_dim(p_no_event_buffer) #(Leafs, DDs...)
         
         if !isnothing(node.children)
             for child in node.children
