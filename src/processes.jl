@@ -172,3 +172,178 @@ function PiQ(r::T,π::Vector{T}; normalize=true) where T <: Real
 end
 
 PiQ(π::Vector{T}; normalize=true) where T <: Real = PiQ(T(1.0), π; normalize=normalize)
+
+"""
+    abstract type Nodal <: Nodal
+
+    
+    Base type for tree nodes which is used to define the PHiQ process.
+"""
+abstract type Nodal end
+
+"""
+    mutable struct PiNode{T} <: Nodal
+
+Internal node type for The PHiQ tree.
+    
+# Parameters
+- `u`: Rate parameter
+- `parent`: Parent node
+- `children`: Children nodes
+- `leaf_indices`: State indices of descendent leaf nodes
+"""
+mutable struct PiNode{T} <: Nodal
+    u::T
+    parent::Union{PiNode{T}, Nothing}
+    children::Union{Vector{<:Nodal},Nothing}
+    leaf_indices::Union{Vector{<:Int}, Nothing}
+    PiNode(u::T) where T = new{T}(u, nothing, nothing, nothing)
+end
+
+"""
+    mutable struct PiLeaf{T} <: Nodal
+
+A PiLeaf node is a representation of a discrete state.
+
+# Parameters
+- `index`: State index
+- `parent`: parent node
+"""
+mutable struct PiLeaf <: Nodal
+    index::Int64
+    parent::Union{PiNode, Nothing}
+    PiLeaf(index) = new(index, nothing)
+end
+
+"""
+    struct HPiQ{T} <: DiscreteProcess
+    
+Discrete-state continuous-time process with an equilibrium vector `π` and a hierichal tree structure `tree`, which imposes a hierichal structure where transition events can occur for a subset of the states. 
+Note, remember to call `init_leaf_indicies!` to correctly collect descendent leaf states for internal nodes, this is needed to call e.g. forward and backward.
+
+# Parameters
+- `tree`: Root node of a tree
+- `π`: equilibrium vector
+
+# Examples
+```julia
+
+# The root
+tree = PiNode(1.0) 
+
+#Internal Nodes
+child1 = PiNode(2.0) 
+child2 = PiNode(3.0)
+
+add_child!(tree, child1)
+add_child!(tree, child2)
+
+# States
+leaf1 = PiLeaf(1)
+leaf2 = PiLeaf(2)
+leaf3 = PiLeaf(3)
+leaf4 = PiLeaf(4)
+
+add_child!(child1, leaf1)
+add_child!(child1, leaf2)
+add_child!(child2, leaf3)
+add_child!(child2, leaf4)
+
+init_leaf_indices!(tree)
+π = [0.2, 0.3, 0.4, 0.1]
+
+HPiQ_process = HPiQ(tree, π)
+```
+"""
+struct HPiQ{T} <: DiscreteProcess
+    tree::PiNode
+    π::Vector{T}
+end
+
+"""
+    add_child!(node::PiNode, child::Nodal)
+
+Helper function for the construction of a HPiQ tree.
+    
+# Parameters
+- `node`: The parent node
+- `child`: The child node 
+"""
+function add_child!(node::PiNode, child::Nodal)
+    if isnothing(node.children)
+        node.children = Nodal[]
+    end
+    push!(node.children, child)
+    child.parent = node
+end
+
+"""
+    init_leaf_indices!(node::PiNode)
+
+This function assigns the state indices of its descendent leaf nodes to each internal node in a HPiQ tree.
+
+# Parameters
+- `node`: The root node of the tree 
+"""
+function init_leaf_indices!(node::PiNode)
+    indices = Int[]
+    if isnothing(node.children)
+        node.leaf_indices = indices
+        return indices
+    end
+    for child in node.children
+        if isa(child, PiLeaf)
+            push!(indices, child.index)
+        elseif isa(child, PiNode)
+            append!(indices, init_leaf_indices!(child))
+        end
+    end
+    node.leaf_indices = sort!(unique!(indices))
+    return node.leaf_indices
+end
+
+# Gets all internal nodes of a HPiQ tree
+function get_all_nodes!(node::PiNode, nodes::Vector{PiNode})
+    push!(nodes, node)
+    if !isnothing(node.children)
+        for child in node.children
+            if isa(child, PiNode)
+                get_all_nodes!(child, nodes)
+            end
+        end
+    end
+    return nodes
+end
+
+# This maps HPiQ process to its corresponding transition rate matrix.
+function HPiQ_Qmatrix(process::HPiQ)
+    (; tree, π) = process
+    N = length(π)
+    Q = zeros(Float64, N, N)
+    all_nodes = PiNode[]
+    get_all_nodes!(tree, all_nodes)
+
+    for node in all_nodes
+        isnothing(node.leaf_indices) && continue
+        idx = node.leaf_indices
+        length(idx) <= 1 && continue
+        u = node.u
+        π_partition_view = view(π, idx)
+        sum_π = sum(π_partition_view)
+        isapprox(sum_π, 0.0) && continue
+        for i_global in idx
+            for j_global in idx
+
+                if i_global != j_global
+                    Q[i_global, j_global] += u * (π[j_global] / sum_π)
+                end
+            end
+        end
+    end
+
+    for i in 1:N
+        Q[i, i] = -sum(Q[i, :])
+    end
+
+    return Q
+end
