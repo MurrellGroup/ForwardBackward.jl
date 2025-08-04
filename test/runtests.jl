@@ -88,6 +88,7 @@ using Test
         add_child!(child2, PiLeaf(3))
         add_child!(child2, PiLeaf(4))
         init_leaf_indices!(tree)
+        init_first_level_parent!(tree)
 
         π = [0.1, 0.4, 0.3, 0.2]
         p_hpiq = HPiQ(tree, π)

@@ -43,6 +43,7 @@ export
     stochastic,
     init_leaf_indices!,
     add_child!,
+    init_first_level_parent!,
     #Manifolds
     ManifoldProcess,
     ManifoldState,

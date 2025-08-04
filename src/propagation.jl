@@ -213,6 +213,72 @@ function backward!(dest::CategoricalLikelihood, source::CategoricalLikelihood, p
     return dest
 end
 
+# function forward!(
+#     dest::CategoricalLikelihood, 
+#     source::CategoricalLikelihood, 
+#     process::HPiQ, 
+#     elapsed_time::Union{Real, AbstractArray}
+# )
+#     dt = elapsed_time
+#     x_s = source.dist
+#     (; tree, π) = process
+#     T = eltype(π)
+#     N = length(π)
+#     @assert size(x_s, 1) == N "First dimension of x_s must match the number of states"
+#     data_dims = size(x_s)[2:end]
+#     p_no_event_buffer = similar(x_s, (data_dims...)) 
+#     p_event_buffer = similar(x_s, (data_dims...)) 
+#     sum_buffer = similar(x_s, (1, data_dims...))
+#     fill!(dest.dist, T(0.0))
+#     no_event = ones(size(x_s))
+    
+#     expand_to_data_dims(v) = reshape(v, (length(v), ntuple(_ -> 1, length(data_dims))...))
+#     expand_to_state_dim(a) = a isa AbstractArray ? reshape(a, (1, size(a)...)) : a
+
+#     function forward_recursive!(node::PiNode)
+#         isnothing(node.leaf_indices) && return
+#         idx = node.leaf_indices
+#         isempty(idx) && return
+
+#         u = node.u
+        
+#         p_no_event_buffer .= exp.(-u .* dt) #(DDs...)
+#         p_event_buffer .= T(1.0) .- p_no_event_buffer #(DDs...)
+
+#         p_no_event_ancestors = view(no_event, idx[1]:idx[1], ntuple(_ -> Colon(), length(data_dims))...) #(1, DDs...)
+        
+#         π_partition_view = view(π, idx) #(Leafs,)
+#         π_partition = π_partition_view / sum(π_partition_view) #(Leafs,)
+        
+#         x_s_partition_view = view(x_s, idx, ntuple(_ -> Colon(), length(data_dims))...) #(Leafs, DDs)
+#         sum!(sum_buffer, x_s_partition_view)
+#         x_s_partition_sum = sum_buffer #(1, DDs...)
+        
+#         # Brodcasting dimensions are: ( (1, DDs...) .*  (1, DDs) ) .* (Leafs, ntuple(Returns(1), length(data_dims))...) .* (1, DDs...)
+#         term = (expand_to_state_dim(p_event_buffer) .* p_no_event_ancestors) .* expand_to_data_dims(π_partition) .* x_s_partition_sum #(Leafs, DDs...)
+
+#         dest_view = view(dest.dist, idx, ntuple(_ -> Colon(), length(data_dims))...) #(Leafs, DDs...)
+#         dest_view .+= term #(Leafs, DDs...)
+        
+#         no_event_view = view(no_event, idx, ntuple(_ -> Colon(), length(data_dims))...) #(Leafs, DDs...)
+#         no_event_view .*= expand_to_state_dim(p_no_event_buffer) #(Leafs, DDs..)
+        
+#         if !isnothing(node.children)
+#             for child in node.children
+#                 if isa(child, PiNode)
+#                     forward_recursive!(child)
+#                 end
+#             end
+#         end
+#     end
+    
+#     forward_recursive!(tree)
+#     dest.dist .= no_event .* x_s .+ dest.dist
+#     dest.log_norm_const .= source.log_norm_const
+    
+#     return dest
+# end
+
 function forward!(
     dest::CategoricalLikelihood, 
     source::CategoricalLikelihood, 
@@ -230,10 +296,14 @@ function forward!(
     p_event_buffer = similar(x_s, (data_dims...)) 
     sum_buffer = similar(x_s, (1, data_dims...))
     fill!(dest.dist, T(0.0))
-    no_event = ones(size(x_s))
+    no_event = similar(x_s, size(x_s)) .= 1
+
     
     expand_to_data_dims(v) = reshape(v, (length(v), ntuple(_ -> 1, length(data_dims))...))
-    expand_to_state_dim(a) = a isa AbstractArray ? reshape(a, (1, size(a)...)) : a
+    #expand_to_state_dim(a) = a isa AbstractArray ? reshape(a, (1, size(a)...)) : a
+
+    expand_to_state_dim(a::AbstractArray) = reshape(a, (1, size(a)...))
+    expand_to_state_dim(a) = a
 
     function forward_recursive!(node::PiNode)
         isnothing(node.leaf_indices) && return
@@ -253,7 +323,7 @@ function forward!(
         x_s_partition_view = view(x_s, idx, ntuple(_ -> Colon(), length(data_dims))...) #(Leafs, DDs)
         sum!(sum_buffer, x_s_partition_view)
         x_s_partition_sum = sum_buffer #(1, DDs...)
-        
+
         # Brodcasting dimensions are: ( (1, DDs...) .*  (1, DDs) ) .* (Leafs, ntuple(Returns(1), length(data_dims))...) .* (1, DDs...)
         term = (expand_to_state_dim(p_event_buffer) .* p_no_event_ancestors) .* expand_to_data_dims(π_partition) .* x_s_partition_sum #(Leafs, DDs...)
 
@@ -262,11 +332,13 @@ function forward!(
         
         no_event_view = view(no_event, idx, ntuple(_ -> Colon(), length(data_dims))...) #(Leafs, DDs...)
         no_event_view .*= expand_to_state_dim(p_no_event_buffer) #(Leafs, DDs..)
-        
+
         if !isnothing(node.children)
-            for child in node.children
-                if isa(child, PiNode)
-                    forward_recursive!(child)
+            if !node.first_level_parent
+                for child in node.children
+                    if isa(child, PiNode)
+                        forward_recursive!(child)
+                    end
                 end
             end
         end
@@ -278,6 +350,7 @@ function forward!(
     
     return dest
 end
+
 
 function backward!(
     dest::CategoricalLikelihood, 
@@ -297,7 +370,7 @@ function backward!(
     p_event_buffer = similar(x_t, (data_dims...))  
     sum_buffer = similar(x_t, (1, data_dims...)) 
     fill!(dest.dist, T(0.0)) 
-    no_event = ones(size(x_t)) 
+    no_event = similar(x_t, size(x_t)) .= 1
     
     expand_to_data_dims(v) = reshape(v, (length(v), ntuple(_ -> 1, length(data_dims))...))
     expand_to_state_dim(a) = a isa AbstractArray ? reshape(a, (1, size(a)...)) : a
@@ -334,9 +407,11 @@ function backward!(
         no_event_view .*= expand_to_state_dim(p_no_event_buffer) #(Leafs, DDs...)
         
         if !isnothing(node.children)
-            for child in node.children
-                if isa(child, PiNode)
-                    backward_recursive!(child)
+            if !node.first_level_parent
+                for child in node.children
+                    if isa(child, PiNode)
+                        backward_recursive!(child)
+                    end
                 end
             end
         end

@@ -159,19 +159,19 @@ process = PiQ(ones(4) ./ 4)
 process = PiQ(2.0, [0.1, 0.2, 0.3, 0.4])
 ```
 """
-struct PiQ{T} <: DiscreteProcess
+struct PiQ{T,V<:AbstractVector{T}} <: DiscreteProcess
     r::T
-    π::Vector{T}
+    π::V
     β::T
 end
 
-function PiQ(r::T,π::Vector{T}; normalize=true) where T <: Real
+function PiQ(r::T,π::AbstractVector{T}; normalize=true) where T <: Real
     piNormed = π ./ sum(π)
     β = normalize ? 1/(1-sum(abs2.(piNormed))) : T(1.0)
     PiQ(r, piNormed, β)
 end
 
-PiQ(π::Vector{T}; normalize=true) where T <: Real = PiQ(T(1.0), π; normalize=normalize)
+PiQ(π::AbstractVector{T}; normalize=true) where T <: Real = PiQ(T(1.0), π; normalize=normalize)
 
 """
     abstract type Nodal <: Nodal
@@ -192,12 +192,14 @@ Internal node type for The PHiQ tree.
 - `children`: Children nodes
 - `leaf_indices`: State indices of descendent leaf nodes
 """
+#TODO Make this GPU compatible
 mutable struct PiNode{T} <: Nodal
     u::T
     parent::Union{PiNode{T}, Nothing}
     children::Union{Vector{<:Nodal},Nothing}
     leaf_indices::Union{Vector{<:Int}, Nothing}
-    PiNode(u::T) where T = new{T}(u, nothing, nothing, nothing)
+    first_level_parent::Union{Bool, Nothing}
+    PiNode(u::T) where T = new{T}(u, nothing, nothing, nothing, nothing)
 end
 
 """
@@ -210,7 +212,7 @@ A PiLeaf node is a representation of a discrete state.
 - `parent`: parent node
 """
 mutable struct PiLeaf <: Nodal
-    index::Int64
+    index::Int32
     parent::Union{PiNode, Nothing}
     PiLeaf(index) = new(index, nothing)
 end
@@ -255,9 +257,9 @@ init_leaf_indices!(tree)
 HPiQ_process = HPiQ(tree, π)
 ```
 """
-struct HPiQ{T} <: DiscreteProcess
+struct HPiQ{T, V<:AbstractVector{T}} <: DiscreteProcess
     tree::PiNode
-    π::Vector{T}
+    π::V
 end
 
 """
@@ -282,6 +284,8 @@ end
 
 This function assigns the state indices of its descendent leaf nodes to each internal node in a HPiQ tree.
 
+#TODO maybe save indexing as range, e.g. 320:23220, but this restricts the degree of freedom of indexing PiLeafs state
+
 # Parameters
 - `node`: The root node of the tree 
 """
@@ -301,6 +305,26 @@ function init_leaf_indices!(node::PiNode)
     node.leaf_indices = sort!(unique!(indices))
     return node.leaf_indices
 end
+
+# function init_first_level_parent!(node::PiNode)
+#     node.first_level_parent = true
+#     for child in node.children
+#        if isa(child, PiNode)
+#             node.first_level_parent = false
+#             init_first_level_parent!(child)
+#        end
+#     end
+# end
+
+function init_first_level_parent!(node::PiNode)
+    node.first_level_parent = all(child -> isa(child, PiLeaf), node.children)
+    for child in node.children
+       if isa(child, PiNode)
+            init_first_level_parent!(child)
+       end
+    end
+end
+
 
 # Gets all internal nodes of a HPiQ tree
 function get_all_nodes!(node::PiNode, nodes::Vector{PiNode})
