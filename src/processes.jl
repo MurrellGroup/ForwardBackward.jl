@@ -201,6 +201,19 @@ mutable struct PiNode{T} <: Nodal
     first_level_parent::Union{Bool, Nothing}
     PiNode(u::T) where T = new{T}(u, nothing, nothing, nothing, nothing)
 end
+# mutable struct PiNode{T, S, V<:AbstractVector{S}} <: Nodal
+#     u::T
+#     parent::Union{PiNode{T}, Nothing}
+#     children::Union{Vector{<:Nodal},Nothing}
+#     leaf_indices::Union{V, Nothing}
+#     first_level_parent::Union{Bool, Nothing}
+
+#     function PiNode{T,S,V}(u, parent, children, leaf_indices, first_level_parent) where {T,S,V}
+#         new{T,S,V}(u, parent, children, leaf_indices, first_level_parent)
+#     end
+
+#     PiNode(u::T) where T = new{T, Int32, Vector{Int32}}(u, nothing, nothing, nothing, nothing)
+# end
 
 """
     mutable struct PiLeaf{T} <: Nodal
@@ -305,6 +318,51 @@ function init_leaf_indices!(node::PiNode)
     node.leaf_indices = sort!(unique!(indices))
     return node.leaf_indices
 end
+# function init_leaf_indices!(node::PiNode{T, S, V}; gpu_adapted::Bool=false) where {T, S, V}
+#     if isnothing(node.children)
+#         if gpu_adapted
+#              node.leaf_indices = V()
+#         else
+#             node.leaf_indices = S[]
+#         end
+#         return node.leaf_indices
+#     end
+#     collected_indices = S[]
+#     for child in node.children
+#         if child isa PiLeaf
+#             push!(collected_indices, child.index)
+#         elseif child isa PiNode
+#             append!(collected_indices, init_leaf_indices!(child))
+#         end
+#     end
+#     unique!(collected_indices)
+#     sort!(collected_indices)
+#     if gpu_adapted
+#         node.leaf_indices = V(collected_indices)
+#     else
+#         node.leaf_indices = collected_indices
+#     end
+#     return node.leaf_indices
+# end
+
+# function init_leaf_indices!(node::PiNode)
+#     indices = typeof(node).parameters[3][]
+#     if isnothing(node.children)
+#         node.leaf_indices = indices
+#         return indices
+#     end
+#     for child in node.children
+#         if isa(child, PiLeaf)
+#             push!(indices, child.index)
+#         elseif isa(child, PiNode)
+#             append!(indices, init_leaf_indices!(child))
+#         end
+#     end
+#     a=unique!(indices)
+#     println(typeof(a))
+#     node.leaf_indices = sort!(a)
+#     return node.leaf_indices
+# end
 
 # function init_first_level_parent!(node::PiNode)
 #     node.first_level_parent = true
