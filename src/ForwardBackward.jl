@@ -22,6 +22,9 @@ export
     UniformUnmasking,
     GeneralDiscrete,
     PiQ,
+    HPiQ,
+    PiNode,
+    PiLeaf,
     #Likelihoods & States
     CategoricalLikelihood,
     GaussianLikelihood,
@@ -38,6 +41,9 @@ export
     tensor,
     sumnorm,
     stochastic,
+    init_leaf_indices!,
+    add_child!,
+    init_first_level_parent!,
     #Manifolds
     ManifoldProcess,
     ManifoldState,
