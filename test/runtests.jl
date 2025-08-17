@@ -175,7 +175,7 @@ using Test
                 (0.1, v_mid, 0.9),
                 (0.2, 0.6, δ_last),
                 (full_grid, 0.3, 0.4),
-                (0.0, full_grid, 0.5)
+                (0.0, full_grid, 0.5),
             ]
             for (μ, v, θ) in cases
                 ok = true
@@ -290,6 +290,31 @@ using Test
             @test isapprox(Y_vec_b.mu, mu_b2)
             @test isapprox(Y_vec_b.var, var_b2)
         end
+    end
+
+    @testset "Constructors" begin
+        function _v_of_t(t, P::OrnsteinUhlenbeckExpVar)
+            v = P.a0 .+ zero.(t)
+            for k in eachindex(P.w, P.β)
+                v .+= P.w[k] .* exp.(P.β[k] .* t)
+            end
+            return v
+        end
+        P = OrnsteinUhlenbeckExpVar(0.23, 7.5, 25.0, 0.0001, dec = -0.1)
+        @test isapprox(_v_of_t([0.0], P)[1], 25.0)
+
+        P1 = OrnsteinUhlenbeckExpVar()
+        P2 = OrnsteinUhlenbeckExpVar(0.0, 1.0, 1.0)
+        @test P1.μ == P2.μ
+        @test P1.a0 == P2.a0
+        @test P1.w == P2.w
+        @test P1.β == P2.β
+        @test P1.θ == P2.θ
+    end
+
+    @testset "Maths" begin
+        @test isapprox(ForwardBackward._ou_noise_Q(0.0, 1.0, 0.0, 0.0, Float64[], Float64[]), 0.0)
+        @test isapprox(ForwardBackward._ou_noise_Q(0.0, 1.0, 0.0, 0.0, [0.1], [0.0]), 0.1)
     end
 
 end
