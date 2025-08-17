@@ -18,6 +18,7 @@ export
     Deterministic,    
     BrownianMotion,
     OrnsteinUhlenbeck,
+    OrnsteinUhlenbeckExpVar,
     UniformDiscrete,
     UniformUnmasking,
     GeneralDiscrete,

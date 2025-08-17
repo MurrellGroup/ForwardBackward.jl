@@ -26,3 +26,38 @@ function pointwise_gaussians_product(g1_mu::T, g1_var::T, g2_mu::T, g2_var::T) w
         ))
     return r_mu, r_var, r_log_norm_const
 end
+
+# -------------------------
+# OU with time-varying variance v(t)
+# -------------------------
+function _ou_noise_Q(t1, t2, θ, a0, w::AbstractVector, β::AbstractVector)
+    Δ = t2 .- t1
+    if iszero(θ)
+        Q = a0 .* Δ
+        for k in eachindex(w, β)
+            bk = β[k]
+            wk = w[k]
+            if iszero(bk)
+                Q = Q .+ wk .* Δ
+            else
+                Q = Q .+ wk .* (exp.(bk .* t2) .- exp.(bk .* t1)) ./ bk
+            end
+        end
+        return Q
+    else
+        e_m2θΔ = exp.(-2 .* θ .* Δ)
+        Q = a0 .* (-expm1.(-2 .* θ .* Δ)) ./ (2 .* θ)
+        for k in eachindex(w, β)
+            bk = β[k]
+            wk = w[k]
+            denom = bk .+ 2 .* θ
+            # denom is scalar if θ is scalar; handle near-zero safely
+            if abs(float(denom)) > eps(float(denom))
+                Q = Q .+ (wk ./ denom) .* (exp.(bk .* t2) .- exp.(bk .* t1) .* e_m2θΔ)
+            else
+                Q = Q .+ wk .* exp.(bk .* t2) .* Δ
+            end
+        end
+        return Q
+    end
+end

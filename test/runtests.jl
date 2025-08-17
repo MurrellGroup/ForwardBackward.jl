@@ -219,4 +219,77 @@ using Test
         end
     end
 
+    @testset "Temporal Consistency - OUExpVar (two-time APIs)" begin
+        # State and time grid
+        X0 = GaussianLikelihood(randn(3,4,5), rand(3,4,5), rand(3,4,5))
+        μ_grid = randn(1,4,1)                      # broadcastable over X0
+        θ = 0.7
+        a0 = 0.3
+        w = [0.2, 0.1]
+        β = [-0.5, 0.3]
+        P = OrnsteinUhlenbeckExpVar(μ_grid, θ, a0, w, β)
+
+        t_a = 0.0
+        t_b = 0.4
+        t_c = 1.0
+
+        # Forward then forward should equal direct forward over [t_a, t_c]
+        Yab = forward(X0, P, t_a, t_b)
+        Ybc = forward(Yab, P, t_b, t_c)
+        Yac = forward(X0, P, t_a, t_c)
+        @test isapprox(Ybc.mu, Yac.mu)
+        @test isapprox(Ybc.var, Yac.var)
+
+        # Backward then backward should equal direct backward over [t_a, t_c]
+        Ycb = backward(X0, P, t_b, t_c)
+        Yba = backward(Ycb, P, t_a, t_b)
+        Yca = backward(X0, P, t_a, t_c)
+        @test isapprox(Yba.mu, Yca.mu)
+        @test isapprox(Yba.var, Yca.var)
+
+        # Endpoint-conditioned sample uses three-time call
+        X1 = GaussianLikelihood(randn(3,4,5), rand(3,4,5), rand(3,4,5))
+        sample = endpoint_conditioned_sample(X0, X1, P, t_a, t_b, t_c)
+        @test size(sample.state) == size(X0.mu)
+    end
+
+    @testset "Parameter vectorization - OUExpVar (μ array, θ,a0 scalars)" begin
+        X0 = GaussianLikelihood(randn(3,4,5), rand(3,4,5), rand(3,4,5))
+        θ = 0.6
+        a0 = 0.2
+        w = [0.1, 0.05]
+        β = [-0.3, 0.4]
+        μ_last = reshape(randn(5), 1, 1, 5)
+        μ_mid  = reshape(randn(4), 1, 4, 1)
+        μ_full = randn(3,4,5)
+        t_a, t_b, t_c = 0.0, 0.25, 0.9
+
+        function baseline_two_time(f, Xsrc, μarr, ta, tb)
+            dims = size(Xsrc.mu)
+            mu_out = similar(Xsrc.mu)
+            var_out = similar(Xsrc.var)
+            μexp = zeros(eltype(Xsrc.mu), dims...) .+ μarr
+            for idx in CartesianIndices(dims)
+                Psc = OrnsteinUhlenbeckExpVar(μexp[idx], θ, a0, w, β)
+                Y = f(GaussianLikelihood(fill(Xsrc.mu[idx],1), fill(Xsrc.var[idx],1), fill(Xsrc.log_norm_const[idx],1)), Psc, ta, tb)
+                mu_out[idx] = Y.mu[1]
+                var_out[idx] = Y.var[1]
+            end
+            return mu_out, var_out
+        end
+
+        for μarr in (μ_last, μ_mid, μ_full)
+            P = OrnsteinUhlenbeckExpVar(μarr, θ, a0, w, β)
+            Y_vec = forward(X0, P, t_a, t_b)
+            mu_b, var_b = baseline_two_time(forward, X0, μarr, t_a, t_b)
+            @test isapprox(Y_vec.mu, mu_b)
+            @test isapprox(Y_vec.var, var_b)
+
+            Y_vec_b = backward(X0, P, t_b, t_c)
+            mu_b2, var_b2 = baseline_two_time(backward, X0, μarr, t_b, t_c)
+            @test isapprox(Y_vec_b.mu, mu_b2)
+            @test isapprox(Y_vec_b.var, var_b2)
+        end
+    end
+
 end

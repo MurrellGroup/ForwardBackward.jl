@@ -13,6 +13,8 @@ end
     forward(Xt::StateLikelihood, process::Process, t)
     forward(Xt::State, process::Process, t)
     forward(Xt, process::Process, t1, t2) = forward!(Xt, process, t2 - t1) #For time-homogeneous processes
+    forward(Xt::StateLikelihood, process::Process, t1, t2)
+    forward(Xt::State, process::Process, t1, t2)
 
 Propagate a state or likelihood forward in time according to the process dynamics.
 
@@ -30,8 +32,11 @@ The forward-propagated state or likelihood.
 forward!(Xdest::StateLikelihood, Xt::State, process::Process, t) = forward!(Xdest, stochastic(eltype(t), Xt), process, t)
 forward(Xt::StateLikelihood, process::Process, t) = forward!(copy(Xt), Xt, process, t)
 forward(Xt::State, process::Process, t) = forward!(stochastic(eltype(t), Xt), Xt, process, t)
-forward!(Xdest, Xt, process::Process, t1, t2) = forward!(Xdest, Xt, process, t2 - t1)
-forward(Xt, process::Process, t1, t2) = forward!(Xt, process, t2 - t1)
+
+forward!(Xdest, Xt, process::Process, t1, t2) = error() #forward!(Xdest, Xt, process, t2 - t1) #Overload for time-homogeneous processes
+forward!(Xdest::StateLikelihood, Xt::State, process::Process, t1, t2) = forward!(Xdest, stochastic(eltype(t1), Xt), process, t1, t2)
+forward(Xt::State, process::Process, t1, t2) = forward!(stochastic(eltype(t1), Xt), Xt, process, t1, t2)
+forward(Xt::StateLikelihood, process::Process, t1, t2) = forward!(copy(Xt), Xt, process, t1, t2)
 
 """
     backward!(Xdest::StateLikelihood, Xt::State, process::Process, t)
@@ -39,6 +44,8 @@ forward(Xt, process::Process, t1, t2) = forward!(Xt, process, t2 - t1)
     backward(Xt::StateLikelihood, process::Process, t)
     backward(Xt::State, process::Process, t)
     backward(Xt, process::Process, t1, t2) = backward!(Xt, process, t2 - t1) #For time-homogeneous processes
+    backward(Xt::StateLikelihood, process::Process, t1, t2)
+    backward(Xt::State, process::Process, t1, t2)
 
 Propagate a state or likelihood backward in time according to the process dynamics.
 
@@ -55,8 +62,11 @@ The backward-propagated state or likelihood
 backward!(Xdest::StateLikelihood, Xt::State, process::Process, t) = backward!(Xdest, stochastic(eltype(t), Xt), process, t)
 backward(Xt::StateLikelihood, process::Process, t) = backward!(copy(Xt), Xt, process, t)
 backward(Xt::State, process::Process, t) = backward!(stochastic(eltype(t), Xt), Xt, process, t)
-backward!(Xdest, Xt, process::Process, t1, t2) = backward!(Xdest, Xt, process, t2 - t1)
-backward(Xt, process::Process, t1, t2) = backward!(Xt, process, t2 - t1)
+
+backward!(Xdest, Xt, process::Process, t1, t2) = error() #backward!(Xdest, Xt, process, t2 - t1) #Overload for time-homogeneous processes
+backward!(Xdest::StateLikelihood, Xt::State, process::Process, t1, t2) = backward!(Xdest, stochastic(eltype(t1), Xt), process, t1, t2)
+backward(Xt::State, process::Process, t1, t2) = backward!(stochastic(eltype(t1), Xt), Xt, process, t1, t2)
+backward(Xt::StateLikelihood, process::Process, t1, t2) = backward!(copy(Xt), Xt, process, t1, t2)
 
 """
     interpolate(X0::ContinuousState, X1::ContinuousState, tF, tB)
@@ -143,6 +153,30 @@ function backward!(x_dest::GaussianLikelihood, Xt::GaussianLikelihood, process::
     x_dest.mu .= @. Xt.mu - process.δ * t
     x_dest.var .= @. process.v * t + Xt.var
     x_dest.log_norm_const .= Xt.log_norm_const
+    return x_dest
+end
+
+function forward!(x_dest::GaussianLikelihood, Xs::GaussianLikelihood, P::OrnsteinUhlenbeckExpVar, t1, t2)
+    μ, θ = P.μ, P.θ
+    t1e = expand(t1, ndims(Xs.mu))
+    t2e = expand(t2, ndims(Xs.mu))
+    Δ   = t2e .- t1e
+    Q   = _ou_noise_Q(t1e, t2e, θ, P.a0, P.w, P.β)
+    @. x_dest.mu  = μ + exp(-θ * Δ) * (Xs.mu - μ)
+    @. x_dest.var = exp(-2θ * Δ) * Xs.var + Q
+    x_dest.log_norm_const .= Xs.log_norm_const
+    return x_dest
+end
+
+function backward!(x_dest::GaussianLikelihood, Xu::GaussianLikelihood, P::OrnsteinUhlenbeckExpVar, t1, t2)
+    μ, θ = P.μ, P.θ
+    t1e = expand(t1, ndims(Xu.mu))
+    t2e = expand(t2, ndims(Xu.mu))
+    Δ   = t2e .- t1e
+    Q   = _ou_noise_Q(t1e, t2e, θ, P.a0, P.w, P.β)
+    @. x_dest.mu  = μ + exp( θ * Δ) * (Xu.mu - μ)
+    @. x_dest.var = exp( 2θ * Δ) * (Xu.var + Q)
+    x_dest.log_norm_const .= Xu.log_norm_const
     return x_dest
 end
 
