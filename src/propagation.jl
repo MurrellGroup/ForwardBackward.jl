@@ -1,3 +1,5 @@
+#Note: time-inhomogeneous processes must not implement the single-time forward/backward methods, and the two-time endpoint-conditioned sampling method.
+
 expand(t::Real, x) = t
 function expand(t::AbstractArray, d::Int)
     ndt = ndims(t)
@@ -7,8 +9,10 @@ end
 
 """
     forward!(Xdest::StateLikelihood, Xt::State, process::Process, t)
+    forward!(Xdest, Xt, process::Process, t1, t2) = forward!(Xdest, Xt, process::Process, t2-t1) #For time-homogeneous processes
     forward(Xt::StateLikelihood, process::Process, t)
     forward(Xt::State, process::Process, t)
+    forward(Xt, process::Process, t1, t2) = forward!(Xt, process, t2 - t1) #For time-homogeneous processes
 
 Propagate a state or likelihood forward in time according to the process dynamics.
 
@@ -16,19 +20,25 @@ Propagate a state or likelihood forward in time according to the process dynamic
 - `Xdest`: Destination for in-place operation
 - `Xt`: Initial state or likelihood
 - `process`: The stochastic process
-- `t`: Time to propagate forward
+- `t`: Time to propagate forward, for the single-time call
+- `t1`, `t2`: Start and end times, for the two-time call
+
 
 # Returns
-The forward-propagated state or likelihood
+The forward-propagated state or likelihood. 
 """
 forward!(Xdest::StateLikelihood, Xt::State, process::Process, t) = forward!(Xdest, stochastic(eltype(t), Xt), process, t)
 forward(Xt::StateLikelihood, process::Process, t) = forward!(copy(Xt), Xt, process, t)
 forward(Xt::State, process::Process, t) = forward!(stochastic(eltype(t), Xt), Xt, process, t)
+forward!(Xdest, Xt, process::Process, t1, t2) = forward!(Xdest, Xt, process, t2 - t1)
+forward(Xt, process::Process, t1, t2) = forward!(Xt, process, t2 - t1)
 
 """
     backward!(Xdest::StateLikelihood, Xt::State, process::Process, t)
+    backward!(Xdest, Xt, process::Process, t1, t2) = backward!(Xdest, Xt, process, t2 - t1) #For time-homogeneous processes
     backward(Xt::StateLikelihood, process::Process, t)
     backward(Xt::State, process::Process, t)
+    backward(Xt, process::Process, t1, t2) = backward!(Xt, process, t2 - t1) #For time-homogeneous processes
 
 Propagate a state or likelihood backward in time according to the process dynamics.
 
@@ -36,7 +46,8 @@ Propagate a state or likelihood backward in time according to the process dynami
 - `Xdest`: Destination for in-place operation
 - `Xt`: Final state or likelihood
 - `process`: The stochastic process
-- `t`: Time to propagate backward
+- `t`: Time to propagate backward, for the single-time call
+- `t1`, `t2`: Start and end times, for the two-time call
 
 # Returns
 The backward-propagated state or likelihood
@@ -44,9 +55,12 @@ The backward-propagated state or likelihood
 backward!(Xdest::StateLikelihood, Xt::State, process::Process, t) = backward!(Xdest, stochastic(eltype(t), Xt), process, t)
 backward(Xt::StateLikelihood, process::Process, t) = backward!(copy(Xt), Xt, process, t)
 backward(Xt::State, process::Process, t) = backward!(stochastic(eltype(t), Xt), Xt, process, t)
+backward!(Xdest, Xt, process::Process, t1, t2) = backward!(Xdest, Xt, process, t2 - t1)
+backward(Xt, process::Process, t1, t2) = backward!(Xt, process, t2 - t1)
 
 """
     interpolate(X0::ContinuousState, X1::ContinuousState, tF, tB)
+    interpolate(X_a::ContinuousState, X_c::ContinuousState, t_a, t_b, t_c) = interpolate(X_a, X_c, t_b .- t_a, t_c .- t_b)
 
 Linearly interpolate between two continuous states.
 
@@ -55,6 +69,7 @@ Linearly interpolate between two continuous states.
 - `X1`: Final state
 - `tF`: Forward time
 - `tB`: Backward time
+- `t_a`, `t_b`, `t_c`: If 3-time call, this assumes `t_b-t_a` is the forward time and `t_c-t_b` is the backward time.
 
 # Returns
 The interpolated state
@@ -64,20 +79,26 @@ function interpolate(X0::ContinuousState, X1::ContinuousState, tF, tB)
     t1 = @. 1 - t0
     return ContinuousState(X0.state .* expand(t1, ndims(X0.state)) .+ X1.state .* expand(t0, ndims(X1.state)))
 end
+interpolate(X_a::ContinuousState, X_c::ContinuousState, t_a, t_b, t_c) = interpolate(X_a, X_c, t_b .- t_a, t_c .- t_b)
 
 """
-    endpoint_conditioned_sample(X0, X1, p, tF, tB)
-    endpoint_conditioned_sample(X0, X1, p, t)
-    endpoint_conditioned_sample(X0, X1, p::Deterministic, tF, tB)
+    endpoint_conditioned_sample(Xa, Xc, P::Process, t)
+    endpoint_conditioned_sample(Xa, Xc, P::Process, tF, tB)
+    endpoint_conditioned_sample(Xa, Xc, P::Process, t_a, t_b, t_c)
+    endpoint_conditioned_sample(Xa, Xc, P::Deterministic, tF, tB)
+    
 
 Generate a sample from the endpoint-conditioned process.
 
 # Parameters
-- `X0`: Initial state
-- `X1`: Final state
-- `p`: The stochastic process
-- `t`, `tF`: Forward time
-- `tB`: Backward time (defaults to 1-t for single time parameter)
+- `Xa`: Initial state
+- `Xc`: Final state
+- `P`: The stochastic process
+
+# Time argumenrs
+- `t`: For single-time call, this samples at time=t assuming endpoints at time=0 and time=1.
+- `tF`, `tB`: For two-time call, this assumes `tF` is the forward time and `tB` is the backward time (allowed for time-homogeneous processes)
+- `t_a`, `t_b`, `t_c`: If 3-time call, this samples at time=t_b assuming endpoints at time=t_a and time=t_c.
 
 # Returns
 A sample from the endpoint-conditioned distribution
@@ -89,6 +110,7 @@ For deterministic processes, uses linear interpolation.
 endpoint_conditioned_sample(X0, X1, p, tF, tB) = rand(forward(X0, p, tF) ⊙ backward(X1, p, tB))
 endpoint_conditioned_sample(X0, X1, p, t) = endpoint_conditioned_sample(X0, X1, p, t, clamp.(1 .- t, 0, 1))
 endpoint_conditioned_sample(X0, X1, p::Deterministic, tF, tB) = interpolate(X0, X1, tF, tB)
+endpoint_conditioned_sample(Xa, Xc, p::Process, t_a, t_b, t_c) = rand(forward(Xa, p, t_a, t_b) ⊙ backward(Xc, p, t_b, t_c))
 
 function forward!(x_dest::GaussianLikelihood, Xt::GaussianLikelihood, process::OrnsteinUhlenbeck, elapsed_time)
     t = expand(elapsed_time, ndims(Xt.mu))

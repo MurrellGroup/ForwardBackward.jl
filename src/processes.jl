@@ -27,7 +27,7 @@ Base type for processes with continuous state spaces.
 abstract type ContinuousProcess <: Process end
 
 """
-    BrownianMotion(δ::T, v::T) where T <: Real
+    BrownianMotion(δ::T1, v::T2) where T1 <: Real where T2 <: Real
     BrownianMotion(v::Real)
     BrownianMotion()
 
@@ -49,9 +49,9 @@ process = BrownianMotion()
 process = BrownianMotion(0.5, 2.0)
 ```
 """
-struct BrownianMotion{T} <: ContinuousProcess where T <: Real
-    δ::T
-    v::T
+struct BrownianMotion{T1,T2} <: ContinuousProcess where T1 <: Real where T2 <: Real
+    δ::T1
+    v::T2
 end
 
 BrownianMotion() = BrownianMotion(0, 1)
@@ -59,7 +59,7 @@ BrownianMotion(v::T) where T = BrownianMotion(T(0), v)
 
 
 """
-    OrnsteinUhlenbeck(μ::T, v::T, θ::T) where T <: Real
+    OrnsteinUhlenbeck(μ::T1, v::T2, θ::T3) where T1 <: Real where T2 <: Real where T3 <: Real
     OrnsteinUhlenbeck()
 
 Ornstein-Uhlenbeck process with mean `μ`, variance `v`, and mean reversion rate `θ`.
@@ -81,13 +81,14 @@ process = OrnsteinUhlenbeck()
 process = OrnsteinUhlenbeck(1.0, 0.5, 2.0)
 ```
 """
-struct OrnsteinUhlenbeck{T} <: ContinuousProcess
-    μ::T
-    v::T
-    θ::T
+struct OrnsteinUhlenbeck{T1,T2,T3} <: ContinuousProcess
+    μ::T1
+    v::T2
+    θ::T3
 end
 
 OrnsteinUhlenbeck() = OrnsteinUhlenbeck(0, 1, 1)
+
 
 """
     UniformDiscrete(μ::Real)
