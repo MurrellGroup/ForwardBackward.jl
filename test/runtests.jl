@@ -75,4 +75,61 @@ using Test
         @test isapprox(Xt_D.state, Xt.mu)
         @test isapprox(Xt_I.state, Xt.mu)
     end
+
+    @testset "HPiQ" begin
+
+        tree = PiNode(1.0)
+        child1 = PiNode(2.0)
+        child2 = PiNode(3.0)
+        add_child!(tree, child1)
+        add_child!(tree, child2)
+        add_child!(child1, PiLeaf(1))
+        add_child!(child1, PiLeaf(2))
+        add_child!(child2, PiLeaf(3))
+        add_child!(child2, PiLeaf(4))
+        init_leaf_indices!(tree)
+        init_first_level_parent!(tree)
+
+        π = [0.1, 0.4, 0.3, 0.2]
+        p_hpiq = HPiQ(tree, π)
+        N = length(π)
+        @testset "HPiQ create Q" begin
+            Q = [-2.5; 0.5; 0.1; 0.1;; 2.0; -1.0; 0.4; 0.4;; 0.3;  0.3; -1.9; 2.1;; 0.2; 0.2; 1.4; -2.6;;]
+            @test isapprox(Q, ForwardBackward.HPiQ_Qmatrix(p_hpiq), atol=1e-9)
+        end
+        @testset "HPiQ Temporal Consistency" begin
+            for f in [backward, forward]
+                X0 = CategoricalLikelihood(rand(N, 5, 6))
+                t1 = 0.123
+                t2 = 0.234 .* rand(5, 6) 
+                
+                X_step1 = f(X0, p_hpiq, t1)
+                X_step2 = f(X_step1, p_hpiq, t2)
+
+                t_hop = t1 .+ t2
+                X_hop = f(X0, p_hpiq, t_hop)
+                @test isapprox(X_hop.dist, X_step2.dist, atol=1e-9)
+                @test isapprox(X_hop.log_norm_const, X_step2.log_norm_const, atol=1e-9)
+            end
+        end
+
+        @testset "HPiQ Equivalence with GeneralDiscrete" begin
+
+            Q = ForwardBackward.HPiQ_Qmatrix(p_hpiq)
+            p_general = GeneralDiscrete(Q)
+            
+            X0 = CategoricalLikelihood(rand(N, 10)) 
+            dt = 0.456 
+
+            for f in [forward, backward]
+
+                Xt_hpiq = f(X0, p_hpiq, dt)
+                Xt_general = f(X0, p_general, dt)
+
+                @test isapprox(Xt_hpiq.dist, Xt_general.dist, atol=1e-9)
+                @test isapprox(Xt_hpiq.log_norm_const, Xt_general.log_norm_const, atol=1e-9)
+            end
+        end
+
+    end
 end
