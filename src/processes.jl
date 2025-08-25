@@ -27,7 +27,7 @@ Base type for processes with continuous state spaces.
 abstract type ContinuousProcess <: Process end
 
 """
-    BrownianMotion(δ::T, v::T) where T <: Real
+    BrownianMotion(δ::T1, v::T2) where T1 <: Real where T2 <: Real
     BrownianMotion(v::Real)
     BrownianMotion()
 
@@ -49,9 +49,9 @@ process = BrownianMotion()
 process = BrownianMotion(0.5, 2.0)
 ```
 """
-struct BrownianMotion{T} <: ContinuousProcess where T <: Real
-    δ::T
-    v::T
+struct BrownianMotion{T1,T2} <: ContinuousProcess where T1 <: Real where T2 <: Real
+    δ::T1
+    v::T2
 end
 
 BrownianMotion() = BrownianMotion(0, 1)
@@ -59,7 +59,7 @@ BrownianMotion(v::T) where T = BrownianMotion(T(0), v)
 
 
 """
-    OrnsteinUhlenbeck(μ::T, v::T, θ::T) where T <: Real
+    OrnsteinUhlenbeck(μ::T1, v::T2, θ::T3) where T1 <: Real where T2 <: Real where T3 <: Real
     OrnsteinUhlenbeck()
 
 Ornstein-Uhlenbeck process with mean `μ`, variance `v`, and mean reversion rate `θ`.
@@ -81,13 +81,57 @@ process = OrnsteinUhlenbeck()
 process = OrnsteinUhlenbeck(1.0, 0.5, 2.0)
 ```
 """
-struct OrnsteinUhlenbeck{T} <: ContinuousProcess
-    μ::T
-    v::T
-    θ::T
+struct OrnsteinUhlenbeck{T1,T2,T3} <: ContinuousProcess
+    μ::T1
+    v::T2
+    θ::T3
 end
 
 OrnsteinUhlenbeck() = OrnsteinUhlenbeck(0, 1, 1)
+
+
+
+"""
+    OrnsteinUhlenbeckExpVar(μ, θ::Real, a0::Real, w::AbstractVector{<:Real}, β::AbstractVector{<:Real})
+    OrnsteinUhlenbeckExpVar()
+    OrnsteinUhlenbeckExpVar(μ, θ, v)
+    OrnsteinUhlenbeckExpVar(μ, θ, v_at_0, v_at_1; dec = -0.1)
+
+Ornstein–Uhlenbeck process with time-varying instantaneous variance
+v(t) = a0 + sum(w[k] * exp(β[k] * t) for k).
+
+Parameters
+- μ  : Long-run mean (default 0)
+- θ  : Mean-reversion rate (default 1)
+- a0 : Baseline variance level (default 1)
+- w  : Weights of exponential components (default empty)
+- β  : Exponents (same length as w) (default empty)
+
+Notes
+- Keep w ≥ 0 and a0 ≥ 0 if you want v(t) ≥ 0.
+- Handles the limits θ → 0 and β[k] + 2θ → 0 in a numerically stable way.
+- OrnsteinUhlenbeckExpVar(μ, θ, v_at_0, v_at_1; dec = -0.1) sets up a process where the variance decays nearly linearly from v_at_0 to v_at_1 over the interval [0, 1].
+"""
+struct OrnsteinUhlenbeckExpVar{M, Tθ<:Real, Ta0<:Real, Vw<:AbstractVector{<:Real}, Vβ<:AbstractVector{<:Real}} <: ContinuousProcess
+    μ::M
+    θ::Tθ
+    a0::Ta0
+    w::Vw
+    β::Vβ
+    function OrnsteinUhlenbeckExpVar(μ, θ::Tθ, a0::Ta0, w::Vw, β::Vβ) where {Tθ<:Real, Ta0<:Real, Vw<:AbstractVector{<:Real}, Vβ<:AbstractVector{<:Real}}
+        length(w) == length(β) || throw(ArgumentError("w and β must have the same length"))
+        new{typeof(μ), Tθ, Ta0, Vw, Vβ}(μ, θ, a0, w, β)
+    end
+end
+
+OrnsteinUhlenbeckExpVar() = OrnsteinUhlenbeckExpVar(0.0, 1.0, 1.0, Float64[], Float64[])
+OrnsteinUhlenbeckExpVar(μ, θ, v) = OrnsteinUhlenbeckExpVar(μ, θ, v, eltype(μ)[], eltype(μ)[])
+function OrnsteinUhlenbeckExpVar(μ, θ, v_at_0, v_at_1; dec = -0.1)
+    @assert v_at_0 > 0
+    @assert v_at_1 > 0
+    @assert dec < 0
+    OrnsteinUhlenbeckExpVar(μ, θ, v_at_1-((((v_at_0-v_at_1)*exp(dec))/(1-exp(dec)))), [(((v_at_0-v_at_1))/(1-exp(dec)))], [dec])
+end
 
 """
     UniformDiscrete(μ::Real)
