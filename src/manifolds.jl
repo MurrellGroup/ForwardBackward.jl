@@ -104,8 +104,10 @@ perturb(M::AbstractManifold, p, v) = perturb!(M, similar(p), p, v)
 function step_toward!(M::AbstractManifold, dest, p, q, var::Real, t_a, t_b, t_c)
     delta_t = t_b .- t_a
     remaining_t = t_c .- t_b
-    new_p = (var > 0) ? perturb!(M, dest, p, delta_t * var) : p
-    shortest_geodesic!(M, dest, new_p, q, delta_t / remaining_t)
+    if remaining_t > 0
+        new_p = (var > 0) ? perturb!(M, dest, p, delta_t * var) : p
+        shortest_geodesic!(M, dest, new_p, q, delta_t / remaining_t)
+    end
     return dest
 end
 

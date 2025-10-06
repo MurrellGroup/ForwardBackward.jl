@@ -34,10 +34,10 @@ struct OUBridgeExpVar{Tθ<:Real, Ta0<:Real, Vw<:AbstractVector{<:Real}, Vβ<:Abs
     end
 end
 
-OUBridgeExpVar() = OUBridgeExpVar(1.0, 1.0, Float64[], Float64[])
+OUBridgeExpVar(T) = OUBridgeExpVar(T(1), T(1), T[], T[])
 OUBridgeExpVar(θ, v) = OUBridgeExpVar(θ, v, eltype(v)[], eltype(v)[])
 
-function OUBridgeExpVar(θ, v_at_0, v_at_1; dec = -0.1)
+function OUBridgeExpVar(θ, v_at_0, v_at_1; dec = -eltype(θ)(0.1))
     a0 = v_at_1 - (((v_at_0 - v_at_1) * exp(dec)) / (1 - exp(dec)))
     w1 = ((v_at_0 - v_at_1)) / (1 - exp(dec))
     return OUBridgeExpVar(θ, a0, [w1], [dec])
