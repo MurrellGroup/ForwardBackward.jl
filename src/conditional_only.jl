@@ -90,6 +90,114 @@ end
 export OUBridgeExpVar
 
 
+#=
+"""
+    endpoint_conditioned_sample(X0::ManifoldState, X1::ManifoldState,
+                                p::ManifoldProcess{<:OUBridgeExpVar},
+                                t_a, t_b, t_c; Δt = 0.05)
+
+Endpoint-conditioned sampling on a manifold for an OU-style bridge with exponential-mixture noise.
+
+This integrates the **conditional bridge dynamics** using only two manifold
+operations per micro-step:
+  1) `shortest_geodesic!` toward the endpoint `X1.state[...]` with fraction `α`,
+  2) `perturb!` by an isotropic tangent Gaussian with variance `v_step`.
+
+It is **exact in Euclidean space** for the OUBridgeExpVar bridge at the chosen discretization scale,
+because each step matches the finite-horizon OU-bridge transition’s first two moments.
+
+Math (per element, at time `t`, stepping to `t+Δ`):
+- Let `θ = P.θ`, and define
+    φ(Δ)         = exp(-θ*Δ)
+    Q(t, t+Δ)    = _ou_noise_Q(t, t+Δ, θ, P.a0, P.w, P.β)
+    D(t→c)       = _ou_noise_Q(t, t_c, θ, P.a0, P.w, P.β)
+    φ_c(t)       = exp(-θ*(t_c - t))
+    φ_c(t+Δ)     = exp(-θ*(t_c - (t+Δ)))
+
+- The **deterministic contraction** for the OU bridge over [t, t+Δ] is
+    ρ = φ(Δ) - [Q(t, t+Δ) / D(t→c)] * φ_c(t+Δ) * φ_c(t)
+  (so the conditional mean is `x_c + ρ (x_t - x_c)`).
+
+- The **conditional variance increment** is
+    v_step = Q(t, t+Δ) - [φ_c(t+Δ)^2 * Q(t, t+Δ)^2] / D(t→c).
+
+Implementation on a manifold:
+- Geodesic fraction: α = clamp(1 - ρ, 0, 1).
+- Then:
+    shortest_geodesic!(M, cur, cur, x_c_point, α)
+    if v_step > 0
+        perturb!(M, cur, cur, v_step)
+    end
+Repeat until reaching `t_b`.
+
+Notes:
+- This function assumes `p` wraps an `OUBridgeExpVar` in a field named `proc` or `P`.
+- Handles scalar or array times via `expand`. Loops over all elements of `X0.state`.
+- `Δt` is the micro-step size; decreasing it refines the bridge approximation on curved manifolds
+  (exact in Euclidean space for any `Δt` due to the moment-matching step).
+"""
+=#
+#Fast override for manifold processes. Should be exact on Euclidean, but unclear about accuracy compared to tangent steps for manifolds.
+function endpoint_conditioned_sample(X0::ManifoldState, X1::ManifoldState,
+                                     p::ManifoldProcess{<:OUBridgeExpVar},
+                                     t_a, t_b, t_c; Δt = 0.05)
+    P = p.v
+    θ  = P.θ
+    a0 = P.a0
+    w  = P.w
+    β  = P.β
+
+    M  = X0.M
+    T  = eltype(flatview(X0.state))
+    nd = ndims(X0.state)
+
+    ta_arr = zeros(T, size(X0.state)) .+ expand(t_a, nd)
+    tb_arr = zeros(T, size(X0.state)) .+ expand(t_b, nd)
+    tc_arr = zeros(T, size(X0.state)) .+ expand(t_c, nd)
+
+    Xt = copy(X0)
+    epsT = eps(T)
+
+    for ind in CartesianIndices(X0.state)
+        t  = ta_arr[ind]
+        tb = tb_arr[ind]
+        tc = tc_arr[ind]
+
+        # current point evolves in-place at Xt.state[ind]
+        while t < tb
+            inc = min(T(t + Δt), tb)
+            Δ   = inc - t
+
+            # OU kernels and integrals
+            φΔ      = exp(-θ * Δ)
+            Q_step  = _ou_noise_Q(t, inc, θ, a0, w, β)         # ∫ e^{-2θ(inc-s)} q(s) ds
+            D_to_c  = _ou_noise_Q(t, tc,  θ, a0, w, β)         # ∫ e^{-2θ(tc - s)} q(s) ds
+            φc_t    = exp(-θ * (tc - t))
+            φc_inc  = exp(-θ * (tc - inc))
+
+            # Contraction factor and step fraction
+            denom   = max(D_to_c, epsT)
+            ρ       = φΔ - (Q_step / denom) * φc_inc * φc_t
+            α       = clamp(1 - ρ, zero(T), one(T))
+
+            # Deterministic pull along the geodesic toward the endpoint
+            shortest_geodesic!(M, Xt.state[ind], Xt.state[ind], X1.state[ind], α)
+
+            # Conditional variance increment for this slice; add tangent noise
+            v_step = Q_step - (φc_inc^2 * Q_step^2) / denom
+            if v_step > 0
+                perturb!(M, Xt.state[ind], Xt.state[ind], v_step)
+            end
+
+            t = inc
+        end
+    end
+
+    return Xt
+end
+
+
+
 
 """
     struct OUBridgeDistVarSched <: ContinuousProcess
