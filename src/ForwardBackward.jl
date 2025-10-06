@@ -7,6 +7,7 @@ include("processes.jl")
 include("states.jl")
 include("propagation.jl")
 include("manifolds.jl")
+include("conditional_only.jl")
 
 export
     #Abstract Types

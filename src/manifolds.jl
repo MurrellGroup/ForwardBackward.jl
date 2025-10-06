@@ -101,13 +101,26 @@ perturb(M::AbstractManifold, p, v) = perturb!(M, similar(p), p, v)
 
 # A bit uncertain about this for manifolds. Might need to apply the drift correction in the tangent space.
 # Take a single diffusion step from point `p` toward point `q` on manifold `M`. If `var` is 0, this is a deterministic step along the geodesic.
-function step_toward!(M::AbstractManifold, dest, p, q, var, delta_t, remaining_t)
+function step_toward!(M::AbstractManifold, dest, p, q, var::Real, t_a, t_b, t_c)
+    delta_t = t_b .- t_a
+    remaining_t = t_c .- t_b
     new_p = (var > 0) ? perturb!(M, dest, p, delta_t * var) : p
     shortest_geodesic!(M, dest, new_p, q, delta_t / remaining_t)
     return dest
 end
 
-step_toward(M::AbstractManifold, p, q, var, delta_t, remaining_t) = step_toward!(M, similar(p), p, q, var, delta_t, remaining_t)
+
+# This could be a lot faster. Reducing allocations, etc.
+function step_toward!(M::AbstractManifold, dest, p, q, base_process::Process, t_a, t_b, t_c)
+    q_tan_coords = get_coordinates(M,p,log(M,p,q))
+    p_coords = zero(q_tan_coords)
+    t_b_coords = endpoint_conditioned_sample(ContinuousState(p_coords), ContinuousState(q_tan_coords), base_process, t_a, t_b, t_c)
+    exp!(M, p, dest, get_vector(M, p, tensor(t_b_coords)))
+    return dest
+end
+
+
+step_toward(M::AbstractManifold, p, q, var, t_a, t_b, t_c) = step_toward!(M, similar(p), p, q, var, t_a, t_b, t_c)
 
 
 """
@@ -129,25 +142,28 @@ A sample state at the specified time
 # Notes
 Uses a numerical stepping procedure to approximate the endpoint-conditioned distribution.
 """
-function endpoint_conditioned_sample(X0::ManifoldState, X1::ManifoldState, p::ManifoldProcess, tF, tB; Δt = 0.05)
+function endpoint_conditioned_sample(X0::ManifoldState, X1::ManifoldState, p::ManifoldProcess, t_a, t_b, t_c; Δt = 0.05)
     T = eltype(flatview(X0.state))
-    tot = zeros(T, size(X0.state)) .+ expand(tF .+ tB, ndims(X0.state))
-    target = zeros(T, size(X0.state)) .+ expand(tF, ndims(X0.state))
+    t_a_arr = zeros(T, size(X0.state)) .+ expand(t_a, ndims(X0.state))
+    t_b_arr = zeros(T, size(X0.state)) .+ expand(t_b, ndims(X0.state))
+    t_c_arr = zeros(T, size(X0.state)) .+ expand(t_c, ndims(X0.state))
     Xt = copy(X0)
     for ind in CartesianIndices(X0.state)
-        t = 0.0
-        while t < target[ind]
-            inc = min(T(Δt), target[ind] - t)
-            step_toward!(X0.M, Xt.state[ind], Xt.state[ind], X1.state[ind], p.v, inc, tot[ind] - t)
-            t += inc
+        t = t_a_arr[ind]
+        while t < t_b_arr[ind]
+            inc = min(T(t+Δt), t_b_arr[ind])
+            step_toward!(X0.M, Xt.state[ind], Xt.state[ind], X1.state[ind], p.v, t, inc, t_c_arr[ind])
+            t = inc
         end
     end
     return Xt
 end
 
+#You should only call this for time-homogeneous processes:
+endpoint_conditioned_sample(X0::ManifoldState, X1::ManifoldState, p::ManifoldProcess, tF, tB; Δt = 0.05) = endpoint_conditioned_sample(X0, X1, p, zero(tF), tF, tF + tB, Δt = Δt)
+
 
 # ManifoldsExt
-
 """
     soften!(x::AbstractArray{T}, a = T(1e-5)) where T
 
