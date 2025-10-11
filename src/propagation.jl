@@ -158,6 +158,20 @@ function backward!(x_dest::GaussianLikelihood, Xt::GaussianLikelihood, process::
     return x_dest
 end
 
+function endpoint_conditioned_sample(Xa::ContinuousState, Xc::ContinuousState, p::BrownianMotion, t_a, t_b, t_c)
+    d = ndims(Xa.state)
+    tF = expand(t_b .- t_a, d)        # forward interval (s)
+    tB = expand(t_c .- t_b, d)        # backward interval (T - s)
+    Ttot = expand(t_c .- t_a, d)      # total interval (T)
+    w1 = @. (Ttot - tF) / Ttot        # weight for Xa
+    w2 = @. tF / Ttot                 # weight for Xc
+    μ = @. Xa.state * w1 + Xc.state * w2
+    σ2 = @. p.v * tF * tB / Ttot
+    σ = sqrt.(σ2)
+    sample = μ .+ σ .* randn(eltype(μ), size(μ))
+    return ContinuousState(sample)
+end
+
 function forward!(x_dest::GaussianLikelihood, Xs::GaussianLikelihood, P::OrnsteinUhlenbeckExpVar, t1, t2)
     μ, θ = P.μ, P.θ
     t1e = expand(t1, ndims(Xs.mu))
