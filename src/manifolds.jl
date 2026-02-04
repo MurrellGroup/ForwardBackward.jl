@@ -103,7 +103,9 @@ perturb(M::AbstractManifold, p, v) = perturb!(M, similar(p), p, v)
 # Take a single diffusion step from point `p` toward point `q` on manifold `M`. If `var` is 0, this is a deterministic step along the geodesic.
 function step_toward!(M::AbstractManifold, dest, p, q, var::Real, t_a, t_b, t_c)
     delta_t = t_b .- t_a
-    remaining_t = t_c .- t_b
+    # Use remaining horizon from the *current* time (t_a), not t_b.
+    # This matches the Brownian bridge weights and avoids over-pulling near the endpoint.
+    remaining_t = t_c .- t_a
     if remaining_t > 0
         new_p = (var > 0) ? perturb!(M, dest, p, delta_t * var) : p
         shortest_geodesic!(M, dest, new_p, q, delta_t / remaining_t)
@@ -266,6 +268,5 @@ for i in 1:50
 end
 pl
 =#
-
 
 
