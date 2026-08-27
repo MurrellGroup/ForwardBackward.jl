@@ -139,7 +139,7 @@ function backward!(x_dest::GaussianLikelihood, Xt::GaussianLikelihood, process::
     μ, v, θ = process.μ, process.v, process.θ
     @. x_dest.mu = μ + exp(θ * t) * (Xt.mu - μ)
     @. x_dest.var = exp(2θ * t) * (Xt.var + (v / (2θ)) * (1 - exp(-2θ * t)))
-    x_dest.log_norm_const .= Xt.log_norm_const
+    @. x_dest.log_norm_const = Xt.log_norm_const + θ * t
     return x_dest
 end
 
@@ -155,7 +155,7 @@ function backward!(x_dest::GaussianLikelihood, Xt::GaussianLikelihood, process::
     t = expand(elapsed_time, ndims(Xt.mu))
     x_dest.mu .= @. Xt.mu - process.δ * t
     x_dest.var .= @. process.v * t + Xt.var
-    x_dest.log_norm_const .= Xt.log_norm_const
+    x_dest.log_norm_const .= Xt.log_norm_const # might be incorrect
     return x_dest
 end
 
