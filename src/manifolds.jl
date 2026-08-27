@@ -37,7 +37,7 @@ struct ManifoldState{Q<:AbstractManifold,A<:AbstractArray} <: State
 end
 
 function ManifoldState(M::AbstractManifold, state::AbstractArray{<:AbstractArray})
-    @invoke ManifoldState(M, ArrayOfSimilarArrays(state)::AbstractArray)
+    @invoke ManifoldState(M, convert(ArrayOfSimilarArrays, state)::AbstractArray)
 end
 
 Base.similar(S::ManifoldState) = ManifoldState(S.M, similar(S.state))
@@ -47,7 +47,7 @@ Functors.@functor ManifoldState (state,)
 
 function Functors.functor(::Type{<:ManifoldState{<:AbstractManifold,<:ArrayOfSimilarArrays}}, state)
     namedtuple = (; data=flatview(state.state))
-    reconstruct = nt -> @invoke ManifoldState(state.M, nestedview(nt.data, length(innersize(state.state)))::AbstractArray)
+    reconstruct = nt -> @invoke ManifoldState(state.M, ArrayOfSimilarArrays{eltype(nt.data), length(innersize(state.state))}(nt.data)::AbstractArray)
     return namedtuple, reconstruct
 end
 

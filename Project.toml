@@ -17,7 +17,7 @@ Manifolds = "1cead3c2-87b3-11e9-0ccd-23c62b72b94e"
 ManifoldsExt = "Manifolds"
 
 [compat]
-ArraysOfArrays = "0.6.5"
+ArraysOfArrays = "0.6.5, 1"
 Distributions = "0.25.117"
 Functors = "0.5.2"
 LinearAlgebra = "1"
